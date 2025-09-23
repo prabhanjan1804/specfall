@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "specfall"
+version = "0.1.0"
+description = "Waterfall plotter for Radio Astronomy MS data"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Prabhanjan H. Kulkarni"}]
+license = {text = "GPL-3.0-or-later"}
+dependencies = [
+  "numpy>=1.23",
+  "matplotlib>=3.7",
+  "python-casacore>=3.5; platform_system != 'Windows'",
+]
+
+[project.scripts]
+specfall = "specfall.cli:main"
