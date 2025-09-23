@@ -49,37 +49,67 @@ Install WSL2 for Windows
 ```bash
 sudo apt update && sudo apt install -y git python3 python3-pip
 pip install numpy matplotlib
-pip install --upgrade git+https://github.com/prabhanjan1804/specfall.git
+pip install --upgrade git+https://github.com/prabhanjan1804/SpecFall.git
 ```
 
 ## Usage
 
+Both the Python API and the CLI support interactive display (`plt.show()`)  
+or saving plots to disk using `outdir` and `outfile`.  
+If only `outdir` is specified, SpecFall will automatically generate a filename  
+based on the scan and frequency/channel range.
+Following are examples, please adapt paths and parameters as needed.
+
 ### Python
+
 ```python
 import specfall as sf
 
 ms = sf.open("/data/target.ms")
 
 # Quick default plot (all scans, full band, log amplitude)
+# → shown interactively
 ms.plot.waterfall()
 
-# Selected scan, frequency window, linear amplitude
-ms.select(scan=3, fmin=1355.0, fmax=1382.0).plot.waterfall(log_amp=False, cmap="plasma")
+# Save default plot to "plots/waterfall.png"
+ms.plot.waterfall(outdir="plots")
 
-# Use channels on X-axis, plot both polarisations top–bottom
-ms.select(scan=[1,2]).plot.waterfall(x_axis="channel", pol="both", layout="tb", cmap="inferno")
+# Selected scan, frequency window, linear amplitude, plasma colormap
+# → save with a custom filename
+ms.select(scan=3, fmin=1355.0, fmax=1382.0).plot.waterfall(
+    log_amp=False,
+    cmap="plasma",
+    outdir="results",
+    outfile="scan3.png"
+)
+
+# Use channels on X-axis, both polarisations top–bottom, inferno colormap
+# → auto-generate filename inside "outputs/"
+ms.select(scan=[1, 2]).plot.waterfall(
+    x_axis="channel",
+    pol="both",
+    layout="tb",
+    cmap="inferno",
+    outdir="outputs"
+)
 ```
 
 ### Command Line Interface
+
 ```bash
-# Default
+# Default (interactive show)
 specfall plot /path/to/data.ms
 
-# Specific scan and frequency window
-specfall plot /path/to/data.ms --scan 3 --freq 1355:1382 --cmap plasma
+# Save default plot into "plots/waterfall.png"
+specfall plot /path/to/data.ms --outdir plots
 
-# Two scans, channel range, both pols stacked
-specfall plot /path/to/data.ms --scan 1 2 --chan 100:600 --pol both --layout tb
+# Specific scan and frequency window, plasma colormap
+# → save to results/scan3.png
+specfall plot /path/to/data.ms --scan 3 --freq 1355:1382 --cmap plasma --outdir results --outfile scan3.png
+
+# Two scans, channel range, both pols stacked, inferno colormap
+# → auto filename generated inside "outputs/"
+specfall plot /path/to/data.ms --scan 1 2 --chan 100:600 --pol both --layout tb --cmap inferno --outdir outputs
 ```
 
 

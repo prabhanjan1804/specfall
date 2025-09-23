@@ -31,6 +31,8 @@ def main(argv=None):
     pw.add_argument("--linear", action="store_true", help="Use linear amplitude")
     pw.add_argument("--pol", default=None, help="0,1,XX,YY,both")
     pw.add_argument("--layout", choices=["tb", "lr"], default="tb")
+    pw.add_argument("--outdir", help="Directory to save plot instead of showing")
+    pw.add_argument("--outfile", help="Optional filename for saved plot (default: waterfall.png)")
 
     args = p.parse_args(argv)
 
@@ -51,6 +53,9 @@ def main(argv=None):
             log_amp=not args.linear,
             pol=args.pol,
             layout=args.layout,
+            cmap=args.cmap,
+            outdir=args.outdir,
+            outfile=args.outfile,
         )
 
 

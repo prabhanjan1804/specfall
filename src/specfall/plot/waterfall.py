@@ -19,6 +19,7 @@ from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
 from ..utils.logging import log
+import os
 
 POL_ALIASES = {"xx": 0, "yy": 1, "rr": 0, "ll": 1, "xy": 0, "yx": 1}
 
@@ -30,20 +31,25 @@ class WaterfallPlotter:
         self,
         x_axis: str = "freq",          # "freq" or "channel"
         log_amp: bool = True,
-        pol: str | int | None = None,   # override selection
-        layout: str = "tb",             # when pol="both": "tb" or "lr"
+        pol: str | int | None = None,  # override selection
+        layout: str = "tb",            # when pol="both": "tb" or "lr"
         vmax: float | None = None,
         vmin: float | None = None,
         cmap: str = "viridis",
         title: str | None = None,
-        mhz_tick: float | None = 1.0,   # tick every 1 MHz (if x=freq)
-        mhz_label: float | None = 5.0,  # label every 5 MHz (if x=freq)
+        mhz_tick: float | None = 1.0,  # tick every 1 MHz (if x=freq)
+        mhz_label: float | None = 5.0, # label every 5 MHz (if x=freq)
+        outdir: str | None = None,     # save directory (if set, we save instead of show)
+        outfile: str | None = None,    # optional filename (auto-generated if None)
     ):
-        """Plot a time×frequency waterfall averaged across baselines.
+        """
+        Plot a time×frequency waterfall averaged across baselines.
 
+        If `outdir` or `outfile` is provided, the figure is saved to disk; otherwise shown.
         Averaging: for each timestamp, average |DATA| across baselines at each channel & pol.
         """
         from casacore.tables import table
+
         meta = self.ms.meta
         sel = self.ms._sel
         pol = pol if pol is not None else sel.pol
@@ -78,8 +84,8 @@ class WaterfallPlotter:
                 start, count = int(r_idx[0]), int(rows.sum())
 
                 data = T.getcol(meta.data_col, startrow=start, nrow=count)  # (count, nchan, npol)
-                flag = T.getcol("FLAG", startrow=start, nrow=count)        # (count, nchan, npol)
-                times = time_col[start:start+count]                         # (count,)
+                flag = T.getcol("FLAG", startrow=start, nrow=count)         # (count, nchan, npol)
+                times = time_col[start:start+count]                          # (count,)
 
                 # cut to channel window
                 data = data[:, c0:c1, :]
@@ -96,17 +102,15 @@ class WaterfallPlotter:
                 npol = amp.shape[-1]
                 out = np.empty((ntime, nchan, npol), dtype=float)
                 out[:] = np.nan
-                # accumulate sums and counts per time bin to compute nanmean
-                # For efficiency, use add.at on flattened indices
+
                 sums = np.zeros_like(out)
                 counts = np.zeros_like(out)
-                # expand inv to 3D broadcasting
                 idx = inv[:, None, None]
                 valid = ~np.isnan(amp)
                 vals = np.where(valid, amp, 0.0)
                 np.add.at(sums, (idx, np.s_[:], np.s_[:]), vals)
                 np.add.at(counts, (idx, np.s_[:], np.s_[:]), valid.astype(float))
-                out = np.divide(sums, counts, out=np.full_like(sums, np.nan), where=counts>0)
+                out = np.divide(sums, counts, out=np.full_like(sums, np.nan), where=counts > 0)
 
                 # prepare panels
                 panels = _amps_for_pol(out, psel)
@@ -170,7 +174,33 @@ class WaterfallPlotter:
             cbar.set_label("Amplitude" + (" (log10)" if log_amp else ""))
 
         fig.tight_layout()
-        plt.show()
+
+        # ----- SAVE or SHOW -----
+        save = (outdir is not None) or (outfile is not None)
+        if save:
+            outdir = outdir or "."
+            os.makedirs(outdir, exist_ok=True)
+
+            # auto filename if none provided
+            if not outfile:
+                # scan tag
+                if sel.scan is None:
+                    scan_tag = "scans_all"
+                else:
+                    s = sel.scan if isinstance(sel.scan, tuple) else tuple(sel.scan)
+                    scan_tag = "scans_" + "-".join(map(str, s))
+                # range tag
+                if x_axis == "freq":
+                    rng_tag = f"{float(x[0]):.1f}-{float(x[-1]):.1f}MHz"
+                else:
+                    rng_tag = f"{int(chan_idx[0])}-{int(chan_idx[-1])}ch"
+                outfile = f"waterfall_{scan_tag}_{rng_tag}.png"
+
+            path = os.path.join(outdir, outfile)
+            plt.savefig(path, dpi=200, bbox_inches="tight")
+            print(f"[SpecFall] Saved: {path}")
+        else:
+            plt.show()
 
 
 def _resolve_channel_window(meta, sel):
