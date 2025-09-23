@@ -30,7 +30,7 @@ SpecFall is designed for rapid inspection of raw or calibrated visibilities, hel
 Clone from GitHub and install in editable mode:
 
 ```bash
-git clone https://github.com/<your-username>/specfall.git
+git clone https://github.com/prabhanjan1804/specfall.git
 cd specfall
 pip install -e .
 ```
