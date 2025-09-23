@@ -17,6 +17,42 @@
 import argparse
 from .api import open as ms_open
 
+def _parse_baseline_arg(s: str):
+    """
+    Parse --baseline argument into:
+      - 'avg' (str), or
+      - [(a,b), (c,d), ...] list of integer tuples.
+    Accepts spaces; pairs separated by commas; antennas separated by '-'.
+    Examples: 'avg', '3-7', '1-2, 3-7 ,10-11'
+    """
+    if s is None:
+        return "avg"
+    s = s.strip().lower()
+    if s == "avg":
+        return "avg"
+
+    # normalize spaces
+    s = s.replace(" ", "")
+    if not s:
+        return "avg"
+
+    pairs = []
+    for part in s.split(","):
+        if not part:
+            continue
+        if "-" not in part:
+            raise ValueError(f'Invalid baseline "{part}". Use "a-b" (e.g., 3-7).')
+        a, b = part.split("-", 1)
+        try:
+            a_i = int(a); b_i = int(b)
+        except ValueError:
+            raise ValueError(f'Baseline IDs must be integers: got "{part}".')
+        if a_i == b_i:
+            raise ValueError(f"Degenerate baseline {a_i}-{b_i}: antennas must differ.")
+        a_i, b_i = sorted((a_i, b_i))
+        pairs.append((a_i, b_i))
+
+    return pairs if len(pairs) > 1 else pairs[0]
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="specfall")
@@ -33,7 +69,9 @@ def main(argv=None):
     pw.add_argument("--layout", choices=["tb", "lr"], default="tb")
     pw.add_argument("--outdir", help="Directory to save plot instead of showing")
     pw.add_argument("--outfile", help="Optional filename for saved plot (default: waterfall.png)")
-
+    pw.add_argument("--baseline",default="avg",help='Baseline selection: "avg" | "a-b" | "a-b,c-d,..." (antenna IDs, 0-based).')
+    pw.add_argument("--bl-cols",type=int,default=2,help="Number of columns when plotting multiple baselines.")
+    
     args = p.parse_args(argv)
 
     if args.cmd == "plot":
@@ -48,7 +86,10 @@ def main(argv=None):
             cmin, cmax = map(int, args.chan.split(":"))
             sel.update({"cmin": cmin, "cmax": cmax})
         ms = ms.select(**sel)
+        baseline_sel = _parse_baseline_arg(args.baseline)
         ms.plot.waterfall(
+            baseline=baseline_sel,
+            bl_cols=args.bl_cols,
             x_axis=args.x_axis,
             log_amp=not args.linear,
             pol=args.pol,
