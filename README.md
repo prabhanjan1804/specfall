@@ -57,8 +57,10 @@ pip install --upgrade git+https://github.com/prabhanjan1804/SpecFall.git
 Both the Python API and the CLI support interactive display (`plt.show()`)  
 or saving plots to disk using `outdir` and `outfile`.  
 If only `outdir` is specified, SpecFall will automatically generate a filename  
-based on the scan and frequency/channel range.
-Following are examples, please adapt paths and parameters as needed.
+based on the scan, baseline, and frequency/channel range.
+
+New in v0.1.1:  
+SpecFall now supports **baseline-wise plotting** — users can view amplitude as a function of time and frequency **per baseline** rather than averaging across all baselines.
 
 ### Python
 
@@ -67,51 +69,50 @@ import specfall as sf
 
 ms = sf.open("/data/target.ms")
 
-# Quick default plot (all scans, full band, log amplitude)
-# → shown interactively
-ms.plot.waterfall()
-
-# Save default plot to "plots/waterfall.png"
+# Quick default plot (all scans, full band, averaged over baselines)
 ms.plot.waterfall(outdir="plots")
 
-# Selected scan, frequency window, linear amplitude, plasma colormap
-# → save with a custom filename
-ms.select(scan=3, fmin=1355.0, fmax=1382.0).plot.waterfall(
-    log_amp=False,
-    cmap="plasma",
-    outdir="results",
-    outfile="scan3.png"
+# Plot a specific baseline (e.g., antennas 2–5)
+ms.select(scan=2).plot.waterfall(
+    baseline=(2, 5),
+    cmap="inferno",
+    outdir="results"
 )
 
-# Use channels on X-axis, both polarisations top–bottom, inferno colormap
-# → auto-generate filename inside "outputs/"
-ms.select(scan=[1, 2]).plot.waterfall(
-    x_axis="channel",
-    pol="both",
-    layout="tb",
-    cmap="inferno",
-    outdir="outputs"
+# Plot multiple baselines (e.g., [(0,1), (0,2), (1,2)])
+ms.select(scan=1).plot.waterfall(
+    baseline=[(0, 1), (0, 2), (1, 2)],
+    cmap="plasma",
+    outdir="results_multi"
+)
+
+# Save per-baseline plots with a custom filename prefix
+ms.select(scan=2).plot.waterfall(
+    baseline="avg",          # average across all baselines
+    log_amp=False,
+    cmap="viridis",
+    outdir="plots",
+    outfile="scan2"
 )
 ```
 
 ### Command Line Interface
 
 ```bash
-# Default (interactive show)
-specfall plot /path/to/data.ms
-
-# Save default plot into "plots/waterfall.png"
+# Default (averaged over baselines)
 specfall plot /path/to/data.ms --outdir plots
 
-# Specific scan and frequency window, plasma colormap
-# → save to results/scan3.png
-specfall plot /path/to/data.ms --scan 3 --freq 1355:1382 --cmap plasma --outdir results --outfile scan3.png
+# Specific baseline (antennas 2–5)
+specfall plot /path/to/data.ms --scan 2 --baseline 2 5 --cmap inferno --outdir results
 
-# Two scans, channel range, both pols stacked, inferno colormap
-# → auto filename generated inside "outputs/"
-specfall plot /path/to/data.ms --scan 1 2 --chan 100:600 --pol both --layout tb --cmap inferno --outdir outputs
+# Multiple baselines
+specfall plot /path/to/data.ms --scan 1 --baseline 0 1 0 2 1 2 --cmap plasma --outdir results_multi
+
+# Average over all baselines, custom prefix
+specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap viridis --outdir plots --outfile scan2
 ```
 
+---
 
 ## Notes
 - If `CORRECTED_DATA` is absent, SpecFall automatically falls back to using `DATA`.  
@@ -121,7 +122,9 @@ specfall plot /path/to/data.ms --scan 1 2 --chan 100:600 --pol both --layout tb 
   - Recommended: run SpecFall inside **WSL2 (Ubuntu)** for full functionality.  
   - Advanced users may attempt a manual CASACORE + python-casacore build, but this is not officially supported.  
 - Plots are designed as **diagnostic quick–looks**: SpecFall averages over baselines per timestamp for speed and clarity.  
-- Any valid **Matplotlib colormap** can be used (e.g. `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `gray`, `jet`). 
+- Any valid **Matplotlib colormap** can be used (e.g. `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `gray`, `jet`).  
+- Baseline selection: `'avg'` (default), single tuple `(ant1, ant2)`, or list of pairs.  
+- Each baseline is saved as a separate PNG with Y-axis showing UTC timestamps.
 
 ## License
 SpecFall is distributed under GNU GENERAL PUBLIC LICENSE v3

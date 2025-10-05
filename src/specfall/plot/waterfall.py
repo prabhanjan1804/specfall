@@ -209,67 +209,82 @@ class WaterfallPlotter:
         # Colormap and scaling
         cm = cmap or "turbo"
 
-        # For each polarisation and baseline, sort by time and plot
+        # For each baseline, plot according to pol selection
         saved = []
-        for p_idx in sorted(baseline_data.keys()):
-            bl_dict = baseline_data[p_idx]
-            for bl_id in sorted(bl_dict.keys()):
-                entries = bl_dict[bl_id]
-                if not entries:
+
+        # Union of all baseline IDs observed across pol buckets
+        all_baselines = sorted(set().union(*[set(d.keys()) for d in baseline_data.values()]) if baseline_data else [])
+
+        # Helper to render a single panel given entries (list of (t, amp_vec))
+        def _render_panel(ax, entries, xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix):
+            from datetime import datetime, timezone
+            entries.sort(key=lambda x: x[0])
+            times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
+            amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
+            plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
+
+            # Autoscale if needed
+            vmin_eff, vmax_eff = vmin, vmax
+            if vmin is None or vmax is None:
+                finite = np.isfinite(plot_mat)
+                if finite.any():
+                    vals = plot_mat[finite]
+                    lo = np.nanpercentile(vals, 1.0)
+                    hi = np.nanpercentile(vals, 99.0)
+                    if vmin_eff is None: vmin_eff = lo
+                    if vmax_eff is None: vmax_eff = hi
+
+            extent = [x_min, x_max, 0, plot_mat.shape[0]]
+            im = ax.imshow(
+                plot_mat, aspect="auto", origin="lower",
+                extent=extent, vmin=vmin_eff, vmax=vmax_eff, cmap=cm
+            )
+            ax.set_xlabel(xlabel)
+            nt = len(times_sorted)
+            yticks = np.linspace(0, nt - 1, min(6, nt), dtype=int) if nt > 0 else []
+            ylabels = [times_sorted[i].strftime("%H:%M:%S") for i in yticks]
+            ax.set_yticks(yticks)
+            ax.set_yticklabels(ylabels)
+            ax.set_ylabel("Time [UTC]")
+            if title_suffix:
+                ax.set_title(title_suffix)
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label("Amplitude [Jy]" + (" (log10)" if log_amp else ""))
+            return im
+
+        if isinstance(pol, str) and pol.lower() == "both":
+            # Plot *one figure per baseline* with two panels
+            for bl_id in all_baselines:
+                # collect entries for the first two available pols on this baseline
+                pols_available = [p for p in sorted(baseline_data.keys()) if bl_id in baseline_data[p]]
+                if len(pols_available) < 2:
+                    log.warning(f"Baseline {bl_id}: less than two polarisations found; skipping 'both' layout.")
                     continue
-                # Sort by time
-                entries.sort(key=lambda x: x[0])
-                times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
-                amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
+                p0, p1 = pols_available[:2]
 
-                # Optional log amplitude
-                plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
-
-                # Autoscale if not provided
-                vmin_eff, vmax_eff = vmin, vmax
-                if vmin is None or vmax is None:
-                    finite = np.isfinite(plot_mat)
-                    if finite.any():
-                        vals = plot_mat[finite]
-                        lo = np.nanpercentile(vals, 1.0)
-                        hi = np.nanpercentile(vals, 99.0)
-                        if vmin_eff is None: vmin_eff = lo
-                        if vmax_eff is None: vmax_eff = hi
-
-                # Build figure
-                fig, ax = plt.subplots(figsize=(10, 5))
-                if x_axis == "channel":
-                    extent = [x_min, x_max, 0, plot_mat.shape[0]]
+                # Build figure with layout
+                if layout == "lr":
+                    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
                 else:
-                    extent = [x_min, x_max, 0, plot_mat.shape[0]]
-                im = ax.imshow(
-                    plot_mat,
-                    aspect="auto",
-                    origin="lower",
-                    extent=extent,
-                    vmin=vmin_eff,
-                    vmax=vmax_eff,
-                    cmap=cm,
-                )
-                ax.set_xlabel(xlabel)
-                # Y ticks as human-readable UTC times but using row indices
-                nt = len(times_sorted)
-                yticks = np.linspace(0, nt - 1, min(6, nt), dtype=int) if nt > 0 else []
-                ylabels = [times_sorted[i].strftime("%H:%M:%S") for i in yticks]
-                ax.set_yticks(yticks)
-                ax.set_yticklabels(ylabels)
-                ax.set_ylabel("Time [UTC]")
-                ax.set_title(title or f"Baseline {bl_id} – Polarisation {p_idx}")
-                cbar = plt.colorbar(im, ax=ax)
-                cbar.set_label("Amplitude [Jy]" + (" (log10)" if log_amp else ""))
-                fig.tight_layout()
+                    fig, axes = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
 
-                # Output filename: honour explicit outfile as a prefix; otherwise auto
+                # Left/top: first pol
+                title0 = (title or "") + (f"  (pol {p0})")
+                _render_panel(axes[0], list(baseline_data[p0][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title0)
+
+                # Right/bottom: second pol
+                title1 = (title or "") + (f"  (pol {p1})")
+                _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
+
+                fig.suptitle(f"Baseline {bl_id}", y=0.995, fontsize=12)
+                fig.tight_layout(rect=(0,0,1,0.97))
+
+                # Filename
                 if outfile:
                     stem, ext = os.path.splitext(outfile)
                     if not ext:
                         ext = ".png"
-                    fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '_')}{ext}"
+                    fname = f"{stem}_polboth_baseline{bl_id.replace('-', '_')}{ext}"
                 else:
                     if x_axis == "channel":
                         rng = f"{int(x_min)}-{int(x_max)}ch"
@@ -278,12 +293,43 @@ class WaterfallPlotter:
                     scan_tag = (
                         "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
                     )
-                    fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '_')}_{rng}.png"
+                    fname = f"waterfall_scans{scan_tag}_polboth_bl{bl_id.replace('-', '_')}_{rng}.png"
                 save_path = os.path.join(outdir, fname)
                 plt.savefig(save_path, dpi=200, bbox_inches="tight")
                 plt.close(fig)
                 print(f"[SpecFall] Saved: {save_path}")
                 saved.append(save_path)
+        else:
+            # Single-pol mode: one figure per (pol, baseline) as before
+            for p_idx in sorted(baseline_data.keys()):
+                bl_dict = baseline_data[p_idx]
+                for bl_id in sorted(bl_dict.keys()):
+                    entries = bl_dict[bl_id]
+                    if not entries:
+                        continue
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    title_suffix = (title or f"Baseline {bl_id} – Polarisation {p_idx}")
+                    _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
+
+                    if outfile:
+                        stem, ext = os.path.splitext(outfile)
+                        if not ext:
+                            ext = ".png"
+                        fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '_')}{ext}"
+                    else:
+                        if x_axis == "channel":
+                            rng = f"{int(x_min)}-{int(x_max)}ch"
+                        else:
+                            rng = f"{x_min:.1f}-{x_max:.1f}MHz"
+                        scan_tag = (
+                            "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
+                        )
+                        fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '_')}_{rng}.png"
+                    save_path = os.path.join(outdir, fname)
+                    plt.savefig(save_path, dpi=200, bbox_inches="tight")
+                    plt.close(fig)
+                    print(f"[SpecFall] Saved: {save_path}")
+                    saved.append(save_path)
 
         return
 
