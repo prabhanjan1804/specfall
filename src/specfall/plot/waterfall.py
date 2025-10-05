@@ -18,10 +18,58 @@
 from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime as _dt
+import matplotlib.dates as mdates
 from ..utils.logging import log
 import os
 
 POL_ALIASES = {"xx": 0, "yy": 1, "rr": 0, "ll": 1, "xy": 0, "yx": 1}
+
+def _ms_time_to_mpl_dates(times_sec: np.ndarray) -> np.ndarray:
+    """
+    Convert MS TIME (seconds since MJD 0; i.e., MJD reference 1858-11-17) to Matplotlib date numbers.
+    Returns array of floats suitable for imshow extent and DateFormatter.
+    """
+    # MJD epoch
+    epoch = _dt.datetime(1858, 11, 17, 0, 0, 0)
+    # Vectorized conversion
+    return mdates.date2num([epoch + _dt.timedelta(seconds=float(t)) for t in times_sec])
+
+def _nan_group_mean_by_time(values: np.ndarray, times_1d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Aggregate along axis-0 by identical times in `times_1d`, computing nanmean.
+    values: (N, C, P)  float array with NaNs for flagged samples
+    times_1d: (N,)  numeric times aligned to values
+
+    Returns:
+      unique_times: (G,) sorted unique time values
+      mean_vals:    (G, C, P) nan-mean per time-bin
+    """
+    if values.size == 0:
+        return np.array([], dtype=times_1d.dtype), values[:0]
+    order = np.argsort(times_1d)
+    t_sorted = times_1d[order]
+    v_sorted = values[order]
+
+    # Group boundaries
+    new_group = np.empty_like(t_sorted, dtype=bool)
+    new_group[0] = True
+    np.not_equal(t_sorted[1:], t_sorted[:-1], out=new_group[1:])
+    idx_start = np.flatnonzero(new_group)
+    idx_end = np.r_[idx_start[1:], t_sorted.size]
+
+    # Valid mask & sums/counts with NaN handling
+    valid = ~np.isnan(v_sorted)
+    v_filled = np.where(valid, v_sorted, 0.0)
+
+    sums = np.add.reduceat(v_filled, idx_start, axis=0)
+    cnts = np.add.reduceat(valid.astype(np.float64), idx_start, axis=0)
+
+    # Avoid divide-by-zero; keep NaN where no valid samples
+    out = np.divide(sums, cnts, out=np.full_like(sums, np.nan), where=cnts > 0)
+
+    unique_times = t_sorted[idx_start]
+    return unique_times, out
 
 class WaterfallPlotter:
     def __init__(self, ms):
@@ -32,254 +80,212 @@ class WaterfallPlotter:
         x_axis: str = "freq",          # "freq" or "channel"
         log_amp: bool = True,
         pol: str | int | None = None,  # override selection
-        layout: str = "tb",            # when pol="both": "tb" or "lr"
+        layout: str = "tb",
         vmax: float | None = None,
         vmin: float | None = None,
         cmap: str = "viridis",
         title: str | None = None,
-        mhz_tick: float | None = 1.0,  # tick every 1 MHz (if x=freq)
-        mhz_label: float | None = 5.0, # label every 5 MHz (if x=freq)
-        outdir: str | None = None,     # save dir (if set, save instead of show)
-        outfile: str | None = None,    # optional filename (auto if None)
+        amp_scale: float = 1.0,
+        amp_unit: str = "Jy",
+        mhz_tick: float | None = 1.0,
+        mhz_label: float | None = 5.0,
+        outdir: str | None = None,
+        outfile: str | None = None,
         baseline: str | tuple[int, int] | list[tuple[int, int]] = "avg",
-        bl_cols: int = 2,              # grid columns for multi-baseline
+        bl_cols: int = 2,
     ):
         """
-        Plot time×frequency waterfalls from MS data.
-
-        baseline:
-          - "avg": average across all baselines (per timestamp) [default]
-          - (a1, a2): single baseline by antenna IDs (order-insensitive)
-          - [(a1,a2), (a3,a4), ...]: multiple baselines (grid of panels)
-
-        If outdir or outfile is provided, saves the figure; otherwise shows it.
+        Plot baseline-wise waterfalls, one PNG per (polarisation, baseline).
+        This simpler mode mirrors the reference script: for each selected scan
+        we read all rows via TAQL, compute per-row amplitudes (|DATA| masked by FLAG),
+        bucket by (pol, baseline), sort by time and plot a waterfall with Y as
+        time index (tick labels show UTC).
         """
         from casacore.tables import table
+        from collections import defaultdict
+        import matplotlib.dates as _mdates
+        from datetime import datetime, timezone
 
         meta = self.ms.meta
         sel = self.ms._sel
         pol = pol if pol is not None else sel.pol
 
-        # ----- channel window from selection -----
+        # Channel window selection
         c0, c1 = _resolve_channel_window(meta, sel)
-        chan_idx = np.arange(c0, c1)
+        nchan_sel = c1 - c0
 
-        # ----- scans to plot -----
+        # Determine scans
         scans = sel.scan
         if scans is None:
             scans = tuple(np.unique(meta.scans).tolist())
         else:
             scans = tuple(scans)
 
-        # ----- polarization handling -----
-        psel = _resolve_pol(pol)
+        # Prepare frequency / channel axis
+        if x_axis == "channel":
+            x_min, x_max = 0, nchan_sel - 1
+            xlabel = "Channel"
+        else:
+            freqs_mhz = (self.ms.meta.chan_freq[c0:c1] / 1e6)
+            x_min, x_max = float(freqs_mhz[0]), float(freqs_mhz[-1])
+            xlabel = "Frequency [MHz]"
 
-        # ----- normalize baseline selection -----
-        # returns: "avg" | set of (min(a1,a2), max(a1,a2)) tuples
-        def _normalize_bl(blspec):
-            if blspec == "avg" or blspec is None:
-                return "avg"
-            if isinstance(blspec, tuple) and len(blspec) == 2:
-                a, b = sorted(map(int, blspec))
-                return {(a, b)}
-            if isinstance(blspec, list):
-                out = set()
-                for t in blspec:
-                    if not (isinstance(t, tuple) and len(t) == 2):
-                        raise ValueError("Each baseline tuple must be (ant1, ant2)")
-                    a, b = sorted(map(int, t))
-                    out.add((a, b))
-                return out
-            raise ValueError('baseline must be "avg", (a1,a2), or [(a1,a2), ...]')
+        # Output directory
+        if outdir is None:
+            outdir = "."
+        os.makedirs(outdir, exist_ok=True)
 
-        blspec = _normalize_bl(baseline)
-
-        # ----- read rows and group by baseline -----
-        # Build dict: bl -> list of (times, cube[ntime,nchan,npanels]) chunks (per scan)
-        by_bl: dict[tuple[int, int], list[tuple[np.ndarray, np.ndarray]]] = {}
+        # Data buckets: dict[pol_index]["a-b"] -> list of (time_sec, amp_vec)
+        baseline_data: dict[int, dict[str, list[tuple[float, np.ndarray]]]] = defaultdict(lambda: defaultdict(list))
 
         with table(self.ms.path, readonly=True) as T:
-            scan_col = T.getcol("SCAN_NUMBER")
-            time_col = T.getcol("TIME")
-            a1_col   = T.getcol("ANTENNA1")
-            a2_col   = T.getcol("ANTENNA2")
-
+            # Iterate requested scans using TAQL to handle non-contiguous rows
             for sc in scans:
-                rows = (scan_col == sc)
-                if not np.any(rows):
-                    log.warning(f"No rows for scan {sc}; skipping.")
-                    continue
-                r_idx = np.where(rows)[0]
-                start, count = int(r_idx[0]), int(rows.sum())
+                q = T.query(f"SCAN_NUMBER=={int(sc)}")
+                try:
+                    nrows = q.nrows()
+                    if nrows == 0:
+                        log.warning(f"No rows for scan {sc}; skipping.")
+                        continue
 
-                # read columns for this scan chunk
-                times = time_col[start:start+count]                          # (count,)
-                a1    = a1_col[start:start+count]                             # (count,)
-                a2    = a2_col[start:start+count]                             # (count,)
-                data  = T.getcol(meta.data_col, startrow=start, nrow=count)   # (count, nchan, npol)
-                flag  = T.getcol("FLAG",      startrow=start, nrow=count)     # (count, nchan, npol)
+                    data = q.getcol(meta.data_col)         # (rows, nchan, npol) or (rows, npol, nchan)
+                    flag = q.getcol("FLAG")                # same shape
+                    a1   = q.getcol("ANTENNA1")            # (rows,)
+                    a2   = q.getcol("ANTENNA2")            # (rows,)
+                    times = q.getcol("TIME")               # (rows,)
+                finally:
+                    q.close()
 
-                # channel cut
+                # Normalize axes to (rows, nchan, npol)
+                if data.ndim != 3 or flag.ndim != 3:
+                    raise ValueError(f"Unexpected DATA/FLAG dimensionality: DATA {data.shape}, FLAG {flag.shape}")
+                expected_nchan = int(meta.nchan)
+                if data.shape[1] == expected_nchan:
+                    pass
+                elif data.shape[2] == expected_nchan:
+                    data = np.transpose(data, (0, 2, 1))
+                    flag = np.transpose(flag, (0, 2, 1))
+                else:
+                    if flag.shape[1] == expected_nchan:
+                        pass
+                    elif flag.shape[2] == expected_nchan:
+                        data = np.transpose(data, (0, 2, 1))
+                        flag = np.transpose(flag, (0, 2, 1))
+                    else:
+                        raise ValueError(
+                            f"Cannot locate channel axis: expected {expected_nchan} in {data.shape} / {flag.shape}")
+
+                # Channel cut
                 data = data[:, c0:c1, :]
                 flag = flag[:, c0:c1, :]
 
-                # magnitude with flags masked
+                # Amplitude masked by flags
                 amp = np.abs(data)
-                amp = np.where(~flag, amp, np.nan)                            # (count, nchan, npol)
+                amp = np.where(~flag, amp, np.nan)  # (rows, nchan_sel, npol)
+                # Convert amplitude to Jansky scale (1 Jy = 1e-26 W/m^2/Hz)
+                amp *= 1e26
 
-                # split rows by baseline
-                bl_keys = np.stack([np.minimum(a1, a2), np.maximum(a1, a2)], axis=1)  # (count,2)
-                # unique baselines present in this scan
-                uniq_bls, inv = np.unique(bl_keys, axis=0, return_inverse=True)
-                for bi, (ba, bb) in enumerate(uniq_bls):
-                    bl = (int(ba), int(bb))
-                    # if user asked for specific baselines, skip others
-                    if blspec != "avg" and bl not in blspec:
-                        continue
-                    sel_rows = (inv == bi)
-                    if not np.any(sel_rows):
-                        continue
-                    # rows for this baseline
-                    amp_bl   = amp[sel_rows]         # (r_b, nchan, npol)
-                    time_bl  = times[sel_rows]       # (r_b,)
+                # Bucket per (pol, baseline)
+                npol_here = amp.shape[-1]
+                for r in range(amp.shape[0]):
+                    bl_id = f"{min(int(a1[r]), int(a2[r]))}-{max(int(a1[r]), int(a2[r]))}"
+                    t = float(times[r])
+                    for p_idx in range(npol_here):
+                        # Selection of pol: if user asked a concrete pol index/string, filter here
+                        if isinstance(pol, int) and p_idx != pol:
+                            continue
+                        if isinstance(pol, str) and pol.lower() != "both":
+                            # Map alias to index, skip others
+                            p_alias = POL_ALIASES.get(pol.lower(), None)
+                            if p_alias is not None and p_idx != int(p_alias):
+                                continue
+                        arow = amp[r, :, p_idx]
+                        baseline_data[p_idx][bl_id].append((t, arow))
 
-                    # group by unique times for this baseline
-                    t_unique, inv_t = np.unique(time_bl, return_inverse=True)
-                    ntime = t_unique.size
-                    nchan = c1 - c0
-                    npoln = amp_bl.shape[-1]
-                    out = np.empty((ntime, nchan, npoln), dtype=float); out[:] = np.nan
-                    sums = np.zeros_like(out)
-                    cnts = np.zeros_like(out)
-                    idx = inv_t[:, None, None]
-                    valid = ~np.isnan(amp_bl)
-                    vals  = np.where(valid, amp_bl, 0.0)
-                    np.add.at(sums, (idx, np.s_[:], np.s_[:]), vals)
-                    np.add.at(cnts, (idx, np.s_[:], np.s_[:]), valid.astype(float))
-                    out = np.divide(sums, cnts, out=np.full_like(sums, np.nan), where=cnts > 0)
+        # Nothing gathered? bail out
+        if all(len(baseline_data[p]) == 0 for p in baseline_data):
+            raise RuntimeError("Nothing to plot: selection returned no data.")
 
-                    # panels by pol (list of 2D arrays)
-                    panels = _amps_for_pol(out, psel)   # list of (ntime, nchan)
-                    if bl not in by_bl:
-                        by_bl[bl] = []
-                    by_bl[bl].append((t_unique, np.stack(panels, axis=-1)))  # (ntime, nchan, npanels)
+        # Colormap and scaling
+        cm = cmap or "turbo"
 
-        if blspec == "avg":
-            # average/concat across all baselines (quick-look)
-            times_all = []
-            panels_all = []
-            for _, chunks in by_bl.items():
-                for (t_u, pan_cube) in chunks:
-                    times_all.append(t_u)
-                    panels_all.append(pan_cube)  # (ntime, nchan, npanels)
-            if not times_all:
-                raise RuntimeError("Nothing to plot: selection returned no data.")
+        # For each polarisation and baseline, sort by time and plot
+        saved = []
+        for p_idx in sorted(baseline_data.keys()):
+            bl_dict = baseline_data[p_idx]
+            for bl_id in sorted(bl_dict.keys()):
+                entries = bl_dict[bl_id]
+                if not entries:
+                    continue
+                # Sort by time
+                entries.sort(key=lambda x: x[0])
+                times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
+                amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
 
-            times = np.concatenate(times_all)
-            t0 = times.min()
-            thours = (times - t0) / 3600.0
+                # Optional log amplitude
+                plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
 
-            pan_concat = np.concatenate(panels_all, axis=0)  # (NT, NC, NP)
-            mats = [pan_concat[..., i] for i in range(pan_concat.shape[-1])]
+                # Autoscale if not provided
+                vmin_eff, vmax_eff = vmin, vmax
+                if vmin is None or vmax is None:
+                    finite = np.isfinite(plot_mat)
+                    if finite.any():
+                        vals = plot_mat[finite]
+                        lo = np.nanpercentile(vals, 1.0)
+                        hi = np.nanpercentile(vals, 99.0)
+                        if vmin_eff is None: vmin_eff = lo
+                        if vmax_eff is None: vmax_eff = hi
 
-            # X axis
-            if x_axis == "channel":
-                x = chan_idx; xlabel = "Channel"
-            else:
-                x = (self.ms.meta.chan_freq[chan_idx] / 1e6); xlabel = "Frequency [MHz]"
-
-            # Figure layout
-            n_panels = len(mats)
-            if n_panels == 2 and layout == "lr":
-                fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-            elif n_panels == 2:
-                fig, axes = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
-            else:
-                fig, axes = plt.subplots(1, 1, figsize=(9, 5)); axes = np.atleast_1d(axes)
-
-            for p, ax in enumerate(axes):
-                plot_mat = np.log10(np.clip(mats[p], 1e-12, None)) if log_amp else mats[p]
-                im = ax.imshow(plot_mat, aspect="auto", origin="lower",
-                               extent=[x[0], x[-1], thours.min(), thours.max()],
-                               vmin=vmin, vmax=vmax, cmap=cmap)
-                ax.set_ylabel("Time [hr from start]")
-                if p == len(axes) - 1:
-                    ax.set_xlabel(xlabel)
-                ttl = title or f"Waterfall avg ({'log' if log_amp else 'lin'})"
-                ax.set_title(ttl)
-                if x_axis == "freq" and mhz_tick:
-                    _apply_mhz_ticks(ax, x.min(), x.max(), tick=mhz_tick, label_step=mhz_label or mhz_tick)
-                cbar = plt.colorbar(im, ax=ax); cbar.set_label("Amplitude" + (" (log10)" if log_amp else ""))
-
-            fig.tight_layout()
-
-            # save/show
-            _save_or_show(fig, plt, outdir, outfile, x_axis, chan_idx, x, sel)
-            return
-
-        # ----- Specific baseline(s): build per-baseline panels -----
-        # Merge chunks per baseline along time
-        bl_panels: dict[tuple[int, int], dict[str, list[np.ndarray] | np.ndarray]] = {}
-        for bl, chunks in by_bl.items():
-            times = np.concatenate([t for (t, _) in chunks], axis=0)
-            mats3 = np.concatenate([m for (_, m) in chunks], axis=0)  # (NT, NC, NP)
-            bl_panels[bl] = {"times": times, "mats": [mats3[..., i] for i in range(mats3.shape[-1])]}
-
-        if not bl_panels:
-            raise RuntimeError("Nothing to plot for requested baseline(s).")
-
-        # X axis
-        if x_axis == "channel":
-            x = chan_idx; xlabel = "Channel"
-        else:
-            x = (self.ms.meta.chan_freq[chan_idx] / 1e6); xlabel = "Frequency [MHz]"
-
-        # Grid for multiple baselines
-        bl_list = sorted(bl_panels.keys())
-        n_bl = len(bl_list)
-        ncols = min(max(1, bl_cols), n_bl)
-        nrows = int(np.ceil(n_bl / ncols))
-
-        fig = plt.figure(figsize=(6 * ncols, 4 * nrows))
-        gs = fig.add_gridspec(nrows, ncols, wspace=0.25, hspace=0.35)
-
-        for i, bl in enumerate(bl_list):
-            r, c = divmod(i, ncols)
-            sub_gs = gs[r, c]
-
-            # axes per baseline cell
-            if len(bl_panels[bl]["mats"]) == 2:
-                if layout == "lr":
-                    inner = sub_gs.subgridspec(1, 2, wspace=0.1)
-                    axes = np.array([fig.add_subplot(inner[0, 0]), fig.add_subplot(inner[0, 1])])
+                # Build figure
+                fig, ax = plt.subplots(figsize=(10, 5))
+                if x_axis == "channel":
+                    extent = [x_min, x_max, 0, plot_mat.shape[0]]
                 else:
-                    inner = sub_gs.subgridspec(2, 1, hspace=0.1)
-                    axes = np.array([fig.add_subplot(inner[0, 0]), fig.add_subplot(inner[1, 0])])
-            else:
-                axes = np.array([fig.add_subplot(sub_gs)])
+                    extent = [x_min, x_max, 0, plot_mat.shape[0]]
+                im = ax.imshow(
+                    plot_mat,
+                    aspect="auto",
+                    origin="lower",
+                    extent=extent,
+                    vmin=vmin_eff,
+                    vmax=vmax_eff,
+                    cmap=cm,
+                )
+                ax.set_xlabel(xlabel)
+                # Y ticks as human-readable UTC times but using row indices
+                nt = len(times_sorted)
+                yticks = np.linspace(0, nt - 1, min(6, nt), dtype=int) if nt > 0 else []
+                ylabels = [times_sorted[i].strftime("%H:%M:%S") for i in yticks]
+                ax.set_yticks(yticks)
+                ax.set_yticklabels(ylabels)
+                ax.set_ylabel("Time [UTC]")
+                ax.set_title(title or f"Baseline {bl_id} – Polarisation {p_idx}")
+                cbar = plt.colorbar(im, ax=ax)
+                cbar.set_label("Amplitude [Jy]" + (" (log10)" if log_amp else ""))
+                fig.tight_layout()
 
-            times = bl_panels[bl]["times"]
-            thours = (times - times.min()) / 3600.0
-            mats = bl_panels[bl]["mats"]
+                # Output filename: honour explicit outfile as a prefix; otherwise auto
+                if outfile:
+                    stem, ext = os.path.splitext(outfile)
+                    if not ext:
+                        ext = ".png"
+                    fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '_')}{ext}"
+                else:
+                    if x_axis == "channel":
+                        rng = f"{int(x_min)}-{int(x_max)}ch"
+                    else:
+                        rng = f"{x_min:.1f}-{x_max:.1f}MHz"
+                    scan_tag = (
+                        "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
+                    )
+                    fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '_')}_{rng}.png"
+                save_path = os.path.join(outdir, fname)
+                plt.savefig(save_path, dpi=200, bbox_inches="tight")
+                plt.close(fig)
+                print(f"[SpecFall] Saved: {save_path}")
+                saved.append(save_path)
 
-            for p, ax in enumerate(axes):
-                plot_mat = np.log10(np.clip(mats[p], 1e-12, None)) if log_amp else mats[p]
-                im = ax.imshow(plot_mat, aspect="auto", origin="lower",
-                               extent=[x[0], x[-1], thours.min(), thours.max()],
-                               vmin=vmin, vmax=vmax, cmap=cmap)
-                if p == 0:
-                    ax.set_title(f"BL {bl[0]}–{bl[1]}  " + (title or ""))
-                ax.set_ylabel("Time [hr]")
-                if (layout == "tb" and p == len(axes) - 1) or (layout == "lr" and p == len(axes) - 1):
-                    ax.set_xlabel(xlabel)
-                if x_axis == "freq" and mhz_tick:
-                    _apply_mhz_ticks(ax, x.min(), x.max(), tick=mhz_tick, label_step=mhz_label or mhz_tick)
-                cbar = plt.colorbar(im, ax=ax); cbar.set_label("Amp" + (" (log10)" if log_amp else ""))
-
-        fig.suptitle(title or "Waterfall per baseline", y=0.995, fontsize=12)
-        fig.tight_layout(rect=(0, 0, 1, 0.98))
-
-        _save_or_show(fig, plt, outdir, outfile, x_axis, chan_idx, x, sel)
+        return
 
 
 def _resolve_channel_window(meta, sel):
@@ -310,14 +316,24 @@ def _resolve_pol(pol):
 
 
 def _amps_for_pol(cube, psel):
-    """Return list of 2D arrays (ntime, nchan) per panel to plot from (ntime, nchan, npol)."""
+    """Return list of 2D arrays (ntime, nchan) per panel from (ntime, nchan, npol).
+    - psel == 'both' -> two panels (first two pol indices)
+    - psel is slice(None) -> average over pol dimension with NaN-safe mean (no warnings)
+    - psel is int -> single selected pol
+    """
     if psel == "both":
         outs = []
         for p in range(min(2, cube.shape[-1])):
             outs.append(cube[..., p])
         return outs
+
     if isinstance(psel, slice):
-        return [np.nanmean(cube, axis=-1)]
+        # NaN-safe mean over pol axis without runtime warnings for all-NaN rows
+        with np.errstate(invalid="ignore", divide="ignore"):
+            m = np.nanmean(cube, axis=-1)
+        return [m]
+
+    # integer pol index
     return [cube[..., psel]]
 
 

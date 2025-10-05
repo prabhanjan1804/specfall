@@ -14,9 +14,29 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+# src/specfall/utils/checks.py
 import importlib
+try:
+    import importlib.util as _importlib_util
+except Exception:
+    _importlib_util = None
 
 def require(module: str, hint: str = ""):
-    """Raise ImportError if `module` is missing, with a helpful hint."""
-    if importlib.util.find_spec(module) is None:
-        raise ImportError(f"Required module '{module}' not found. {hint}")
+    """Ensure a module is importable; raise a clear error otherwise."""
+    has = False
+    if _importlib_util is not None:
+        try:
+            has = _importlib_util.find_spec(module) is not None
+        except Exception:
+            has = False
+    if not has:
+        try:
+            __import__(module)
+            has = True
+        except Exception:
+            has = False
+    if not has:
+        msg = f"Missing optional dependency: {module}"
+        if hint:
+            msg += f"\nHint: {hint}"
+        raise ImportError(msg)
