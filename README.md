@@ -1,5 +1,7 @@
 # SpecFall
 
+**Work in progress, In testing phase**
+
 **SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in CASA **Measurement Sets (.ms)**.  
 
 It provides diagnostic *waterfall plots* with:  
