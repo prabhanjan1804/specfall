@@ -22,6 +22,10 @@ import datetime as _dt
 import matplotlib.dates as mdates
 from ..utils.logging import log
 import os
+from casacore.tables import table
+from collections import defaultdict
+import matplotlib.dates as _mdates
+from datetime import datetime, timezone
 
 POL_ALIASES = {"xx": 0, "yy": 1, "rr": 0, "ll": 1, "xy": 0, "yx": 1}
 
@@ -101,10 +105,6 @@ class WaterfallPlotter:
         bucket by (pol, baseline), sort by time and plot a waterfall with Y as
         time index (tick labels show UTC).
         """
-        from casacore.tables import table
-        from collections import defaultdict
-        import matplotlib.dates as _mdates
-        from datetime import datetime, timezone
 
         meta = self.ms.meta
         sel = self.ms._sel
@@ -217,7 +217,6 @@ class WaterfallPlotter:
 
         # Helper to render a single panel given entries (list of (t, amp_vec))
         def _render_panel(ax, entries, xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix):
-            from datetime import datetime, timezone
             entries.sort(key=lambda x: x[0])
             times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
             amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
@@ -276,7 +275,7 @@ class WaterfallPlotter:
                 title1 = (title or "") + (f"  (pol {p1})")
                 _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
 
-                fig.suptitle(f"Baseline {bl_id}", y=0.995, fontsize=12)
+                fig.suptitle(f"Baseline {bl_id.replace('-', '&')}", y=0.995, fontsize=12)
                 fig.tight_layout(rect=(0,0,1,0.97))
 
                 # Filename
@@ -284,7 +283,7 @@ class WaterfallPlotter:
                     stem, ext = os.path.splitext(outfile)
                     if not ext:
                         ext = ".png"
-                    fname = f"{stem}_polboth_baseline{bl_id.replace('-', '_')}{ext}"
+                    fname = f"{stem}_polboth_baseline{bl_id.replace('-', '&')}{ext}"
                 else:
                     if x_axis == "channel":
                         rng = f"{int(x_min)}-{int(x_max)}ch"
@@ -293,7 +292,7 @@ class WaterfallPlotter:
                     scan_tag = (
                         "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
                     )
-                    fname = f"waterfall_scans{scan_tag}_polboth_bl{bl_id.replace('-', '_')}_{rng}.png"
+                    fname = f"waterfall_scans{scan_tag}_polboth_bl{bl_id.replace('-', '&')}_{rng}.png"
                 save_path = os.path.join(outdir, fname)
                 plt.savefig(save_path, dpi=200, bbox_inches="tight")
                 plt.close(fig)
@@ -308,14 +307,14 @@ class WaterfallPlotter:
                     if not entries:
                         continue
                     fig, ax = plt.subplots(figsize=(10, 5))
-                    title_suffix = (title or f"Baseline {bl_id} – Polarisation {p_idx}")
+                    title_suffix = (title or f"Baseline {bl_id.replace('-', '&')} - Polarisation {p_idx}")
                     _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
 
                     if outfile:
                         stem, ext = os.path.splitext(outfile)
                         if not ext:
                             ext = ".png"
-                        fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '_')}{ext}"
+                        fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '&')}{ext}"
                     else:
                         if x_axis == "channel":
                             rng = f"{int(x_min)}-{int(x_max)}ch"
@@ -324,7 +323,7 @@ class WaterfallPlotter:
                         scan_tag = (
                             "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
                         )
-                        fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '_')}_{rng}.png"
+                        fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '&')}_{rng}.png"
                     save_path = os.path.join(outdir, fname)
                     plt.savefig(save_path, dpi=200, bbox_inches="tight")
                     plt.close(fig)
