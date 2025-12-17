@@ -71,6 +71,8 @@ def main(argv=None):
     pw.add_argument("--outfile", help="Optional filename for saved plot (default: waterfall.png)")
     pw.add_argument("--baseline",default="avg",help='Baseline selection: "avg" | "a-b" | "a-b,c-d,..." (antenna IDs, 0-based).')
     pw.add_argument("--bl-cols",type=int,default=2,help="Number of columns when plotting multiple baselines.")
+    pw.add_argument("--bad-bl-only", action="store_true", help="Only plot baselines flagged as bad")
+    pw.add_argument("--rms-cut", type=float, default=None,help="RMS threshold for bad baseline detection (Jy)")
     
     args = p.parse_args(argv)
 
@@ -97,6 +99,8 @@ def main(argv=None):
             cmap=args.cmap,
             outdir=args.outdir,
             outfile=args.outfile,
+            bad_bl_only=args.bad_bl_only,
+            rms_cut=args.rms_cut,
         )
 
 

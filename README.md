@@ -1,6 +1,5 @@
-# SpecFall
+<file name=0 path=/Users/phk/specfall/README.md># SpecFall
 
-**Work in progress, In testing phase**
 
 **SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in CASA **Measurement Sets (.ms)**.  
 
@@ -18,7 +17,9 @@ SpecFall is designed for rapid inspection of raw or calibrated visibilities, hel
 - Amplitude scaling: **linear** or **logarithmic**  
 - Scan selection: plot full dataset or chosen scans only  
 - Frequency/channel windowing for zoomed analysis  
-- Polarisation handling: single pol or both pols (arranged top–bottom or side–by–side)  
+- Polarisation handling: single pol or both pols (arranged top–bottom or side–by–side) 
+- Automatic RMS calculation per baseline
+- Optional filtering to plot only baselines exceeding a user-defined RMS threshold
 - Choice of any Matplotlib colormap (e.g. *viridis, plasma, inferno, cividis, gray, jet*)  
 - Simple **CLI** for batch jobs (suitable for SLURM/HPC environments)  
 - Pure Python API for integration into custom workflows  
@@ -61,8 +62,26 @@ or saving plots to disk using `outdir` and `outfile`.
 If only `outdir` is specified, SpecFall will automatically generate a filename  
 based on the scan, baseline, and frequency/channel range.
 
-New in v0.1.1:  
-SpecFall now supports **baseline-wise plotting** — users can view amplitude as a function of time and frequency **per baseline** rather than averaging across all baselines.
+New in v1.0:  
+SpecFall supports baseline-wise waterfall plotting with **automatic RMS computation and RMS-based baseline filtering**, allowing users to identify and visualise only those baselines exhibiting anomalously high noise levels in their time–frequency amplitude statistics.
+
+### Getting Help
+
+SpecFall provides a built-in help system that documents all available plotting
+options, default values, and diagnostic features.
+
+From Python:
+```python
+ms.plot.help()
+```
+
+From the command line:
+```bash
+specfall help
+```
+
+This prints a detailed overview of axis options, baseline handling, RMS-based
+filtering, polarisation layouts, and output settings.
 
 ### Python
 
@@ -88,6 +107,14 @@ ms.select(scan=1).plot.waterfall(
     outdir="results_multi"
 )
 
+# Plot only baselines with RMS above a threshold (Jy)
+ms.select(scan=2).plot.waterfall(
+    rms_cut=5.0,
+    bad_bl_only=True,
+    cmap="plasma",
+    outdir="bad_baselines"
+)
+
 # Save per-baseline plots with a custom filename prefix
 ms.select(scan=2).plot.waterfall(
     baseline="avg",          # average across all baselines
@@ -110,6 +137,9 @@ specfall plot /path/to/data.ms --scan 2 --baseline 2 5 --cmap inferno --outdir r
 # Multiple baselines
 specfall plot /path/to/data.ms --scan 1 --baseline 0 1 0 2 1 2 --cmap plasma --outdir results_multi
 
+# Plot only baselines exceeding an RMS threshold
+specfall plot /path/to/data.ms --scan 2 --rms-cut 5.0 --bad-bl-only --outdir bad_baselines
+
 # Average over all baselines, custom prefix
 specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap viridis --outdir plots --outfile scan2
 ```
@@ -123,11 +153,18 @@ specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap vi
 - On **Windows**, `python-casacore` is not natively supported.  
   - Recommended: run SpecFall inside **WSL2 (Ubuntu)** for full functionality.  
   - Advanced users may attempt a manual CASACORE + python-casacore build, but this is not officially supported.  
-- Plots are designed as **diagnostic quick–looks**: SpecFall averages over baselines per timestamp for speed and clarity.  
+- By default, SpecFall averages visibilities per baseline per timestamp; baseline averaging across the array is optional.
+- RMS is computed per baseline from the plotted time–frequency waterfall data and expressed in Jansky.
+- Baseline filtering is optional and disabled by default.
+- When filtering is enabled, only baselines exceeding the RMS threshold are visualized, reducing the number of output images for large datasets.
+- The tool is intended for diagnostic inspection rather than calibration.
 - Any valid **Matplotlib colormap** can be used (e.g. `viridis`, `plasma`, `inferno`, `magma`, `cividis`, `gray`, `jet`).  
 - Baseline selection: `'avg'` (default), single tuple `(ant1, ant2)`, or list of pairs.  
 - Each baseline is saved as a separate PNG with Y-axis showing UTC timestamps.
+- Use `ms.plot.help()` or `specfall help` to view a complete, up-to-date description
+  of all plotting options and their default settings.
 
 ## License
 SpecFall is distributed under GNU GENERAL PUBLIC LICENSE v3
 Copyright (C) (2025) Prabhanjan H. Kulkarni
+</file>

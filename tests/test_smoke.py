@@ -15,6 +15,39 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import importlib
+import inspect
+
 
 def test_importable():
-    assert importlib.import_module("specfall")
+    specfall = importlib.import_module("specfall")
+    assert specfall is not None
+
+def test_plot_namespace():
+    specfall = importlib.import_module("specfall")
+    assert hasattr(specfall, "plot")
+    assert hasattr(specfall.plot, "waterfall")
+
+def test_open_exists():
+    specfall = importlib.import_module("specfall")
+    assert hasattr(specfall, "open")
+
+
+def test_waterfall_signature():
+    specfall = importlib.import_module("specfall")
+    wf = specfall.plot.waterfall
+
+    sig = inspect.signature(wf)
+
+    # Core plotting args
+    assert "baseline" in sig.parameters
+    assert "outdir" in sig.parameters
+    assert "outfile" in sig.parameters
+    assert "log_amp" in sig.parameters
+    assert "pol" in sig.parameters
+
+    # New functionality
+    assert "amp_scale" in sig.parameters
+    assert "amp_unit" in sig.parameters
+
+    # Filtering / diagnostics
+    assert "bl_cols" in sig.parameters

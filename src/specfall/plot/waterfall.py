@@ -82,7 +82,7 @@ class WaterfallPlotter:
     def waterfall(
         self,
         x_axis: str = "freq",          # "freq" or "channel"
-        log_amp: bool = True,
+        log_amp: bool = True,         # plot log10(amplitude)
         pol: str | int | None = None,  # override selection
         layout: str = "tb",
         vmax: float | None = None,
@@ -97,6 +97,9 @@ class WaterfallPlotter:
         outfile: str | None = None,
         baseline: str | tuple[int, int] | list[tuple[int, int]] = "avg",
         bl_cols: int = 2,
+        bad_bl_only: bool = False,  # Bool= True plot only bad baselines else all. Default: False
+        bad_bl_sigma: float=3.0,    #Default Threshold for bad baseline detection. Default: 3.0 => RMS > 3x mdeian
+        bad_bl_abs: float | None = None, # Absolute RMS cut off in Jy (In OR logic with sigma cut)
     ):
         """
         Plot baseline-wise waterfalls, one PNG per (polarisation, baseline).
@@ -205,6 +208,54 @@ class WaterfallPlotter:
         # Nothing gathered? bail out
         if all(len(baseline_data[p]) == 0 for p in baseline_data):
             raise RuntimeError("Nothing to plot: selection returned no data.")
+        
+        # ----------------------------------------------------
+        # Compute RMS per baseline (across all times & pols)
+        # ----------------------------------------------------
+        baseline_rms: dict[str, float] = {}
+
+        for p_idx, bl_dict in baseline_data.items():
+            for bl_id, entries in bl_dict.items():
+                if not entries:
+                    continue
+
+                amps = np.array([a for _, a in entries], dtype=float)
+                if amps.size == 0:
+                    continue
+
+                rms = np.sqrt(np.nanmean(amps ** 2))
+
+                # Conservative across polarisations
+                if bl_id in baseline_rms:
+                    baseline_rms[bl_id] = max(baseline_rms[bl_id], rms)
+                else:
+                    baseline_rms[bl_id] = rms
+        
+        # ----------------------------------------------------
+        # Identify bad baselines (optional filtering)
+        # ----------------------------------------------------
+        bad_baselines: set[str] = set()
+
+        if baseline_rms and (bad_bl_only or bad_bl_abs is not None):
+            rms_vals = np.array(list(baseline_rms.values()))
+            rms_med = np.nanmedian(rms_vals)
+
+            for bl_id, rms in baseline_rms.items():
+                is_bad = False
+
+                if bad_bl_abs is not None and rms > bad_bl_abs:
+                    is_bad = True
+
+                if bad_bl_sigma is not None and rms > bad_bl_sigma * rms_med:
+                    is_bad = True
+
+                if is_bad:
+                    bad_baselines.add(bl_id)
+
+            log.info(
+                f"Baseline RMS median = {rms_med:.3e} Jy | "
+                f"Flagged {len(bad_baselines)}/{len(baseline_rms)} baselines as bad"
+            )
 
         # Colormap and scaling
         cm = cmap or "turbo"
@@ -214,13 +265,21 @@ class WaterfallPlotter:
 
         # Union of all baseline IDs observed across pol buckets
         all_baselines = sorted(set().union(*[set(d.keys()) for d in baseline_data.values()]) if baseline_data else [])
-
+        # ---- Guard: bad_bl_only requested but none detected ----
+        if bad_bl_only:
+            if not bad_baselines:
+                log.warning("bad_bl_only=True but no baselines exceed the RMS threshold. "
+                            "No plots will be produced."
+                )
+            return
         # Helper to render a single panel given entries (list of (t, amp_vec))
         def _render_panel(ax, entries, xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix):
             entries.sort(key=lambda x: x[0])
             times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
             amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
             plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
+            # RMS calculation (ignoring NaNs)
+            rms = np.sqrt(np.nanmean(plot_mat**2))
 
             # Autoscale if needed
             vmin_eff, vmax_eff = vmin, vmax
@@ -247,15 +306,22 @@ class WaterfallPlotter:
             ax.set_ylabel("Time [UTC]")
             if title_suffix:
                 ax.set_title(title_suffix)
+            ax.text(0.99,0.02, f"RMS = {rms:.3e} {amp_unit}" + (" (log)" if log_amp else ""),
+                    transform=ax.transAxes, ha="right", va="bottom", fontsize=9, bbox=dict(boxstyle='round', facecolor="white", alpha=0.7))
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label("Amplitude [Jy]" + (" (log10)" if log_amp else ""))
             return im
 
         if isinstance(pol, str) and pol.lower() == "both":
-            # Plot *one figure per baseline* with two panels
+            # Plot one figure per baseline* with two panels
             for bl_id in all_baselines:
+                # Plot only bad baselines if requested
+                if bad_bl_only and bl_id not in bad_baselines:
+                    log.debug(f"skipping good baselines {bl_id}")
+                    continue
                 # collect entries for the first two available pols on this baseline
                 pols_available = [p for p in sorted(baseline_data.keys()) if bl_id in baseline_data[p]]
+                
                 if len(pols_available) < 2:
                     log.warning(f"Baseline {bl_id}: less than two polarisations found; skipping 'both' layout.")
                     continue
@@ -303,6 +369,10 @@ class WaterfallPlotter:
             for p_idx in sorted(baseline_data.keys()):
                 bl_dict = baseline_data[p_idx]
                 for bl_id in sorted(bl_dict.keys()):
+                    # Plot only bad baselines if requested
+                    if bad_bl_only and bl_id not in bad_baselines:
+                        log.debug(f"skipping good baselines {bl_id}")
+                        continue
                     entries = bl_dict[bl_id]
                     if not entries:
                         continue
