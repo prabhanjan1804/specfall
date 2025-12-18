@@ -346,21 +346,16 @@ CLI:
 
         # Union of all baseline IDs observed across pol buckets
         all_baselines = sorted(set().union(*[set(d.keys()) for d in baseline_data.values()]) if baseline_data else [])
-        # ---- Guard: bad_bl_only requested but none detected ----
-        if bad_bl_only:
-            if not bad_baselines:
-                log.warning("bad_bl_only=True but no baselines exceed the RMS threshold. "
-                            "No plots will be produced."
-                )
-            return
+
         # Helper to render a single panel given entries (list of (t, amp_vec))
         def _render_panel(ax, entries, xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix):
             entries.sort(key=lambda x: x[0])
             times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
             amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
-            plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
             # RMS calculation (ignoring NaNs)
-            rms = np.sqrt(np.nanmean(plot_mat**2))
+            rms = np.sqrt(np.nanmean(amps ** 2))
+            plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
+
 
             # Autoscale if needed
             vmin_eff, vmax_eff = vmin, vmax
