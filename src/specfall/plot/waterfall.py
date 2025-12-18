@@ -79,6 +79,89 @@ class WaterfallPlotter:
     def __init__(self, ms):
         self.ms = ms
 
+    @staticmethod
+    def help():
+        """
+        Print a concise description of the SpecFall waterfall plotting options
+        and their default values.
+
+        This method is informational only and does not access MS data.
+        """
+        msg = """
+SpecFall Waterfall Plotter — Options Overview
+=============================================
+
+Core axes
+---------
+x_axis        : 'freq' | 'channel'   (default: 'freq')
+                X-axis as frequency (MHz) or channel index.
+log_amp       : bool                 (default: True)
+                Plot log10(amplitude) instead of linear amplitude.
+
+Polarisation
+------------
+pol           : None | int | str
+                None     → average over polarisations
+                int      → select pol index
+                'both'   → plot two polarisations (top–bottom or left–right)
+layout        : 'tb' | 'lr'           (default: 'tb')
+                Layout when pol='both'.
+
+Baselines
+---------
+baseline      : 'avg' | (a1,a2) | [(a1,a2), ...]
+                'avg' → average across all baselines
+                tuple → single baseline
+                list  → multiple baselines
+bl_cols       : int                  (default: 2)
+                Grid columns for multi-baseline plots.
+
+Amplitude & scaling
+-------------------
+amp_unit      : str                  (default: 'Jy')
+                Display unit for amplitude.
+amp_scale     : float                (default: 1.0)
+                Additional multiplicative scale factor.
+vmin, vmax    : float | None
+                Manual color scaling (auto if None).
+cmap          : str                  (default: 'viridis')
+                Matplotlib colormap.
+
+RMS diagnostics
+---------------
+RMS is computed per baseline and displayed on each panel.
+
+bad_bl_only   : bool                 (default: False)
+                If True, only baselines exceeding RMS thresholds are plotted.
+bad_bl_sigma  : float                (default: 3.0)
+                Flag baseline if RMS > sigma × median RMS.
+rms_cut    : float | None
+                Absolute RMS cutoff in Jy (OR condition with sigma).
+
+Output
+------
+outdir        : str | None
+                Directory to save figures (interactive if None).
+outfile       : str | None
+                Base filename (auto-generated if None).
+
+Time axis
+---------
+Y-axis shows UTC timestamps derived from MS TIME column.
+
+Examples
+--------
+Python:
+  ms.plot.waterfall(pol='both', baseline='avg')
+  ms.plot.waterfall(bad_bl_only=True, bad_bl_sigma=4.0)
+
+CLI:
+  specfall plot data.ms --pol both --bad-bl-only --bad-bl-sigma 4
+
+=============================================
+"""
+        print(msg)
+
     def waterfall(
         self,
         x_axis: str = "freq",          # "freq" or "channel"
@@ -99,7 +182,7 @@ class WaterfallPlotter:
         bl_cols: int = 2,
         bad_bl_only: bool = False,  # Bool= True plot only bad baselines else all. Default: False
         bad_bl_sigma: float=3.0,    #Default Threshold for bad baseline detection. Default: 3.0 => RMS > 3x mdeian
-        bad_bl_abs: float | None = None, # Absolute RMS cut off in Jy (In OR logic with sigma cut)
+        rms_cut: float | None = None, # Absolute RMS cut off in Jy (In OR logic with sigma cut)
     ):
         """
         Plot baseline-wise waterfalls, one PNG per (polarisation, baseline).
@@ -236,14 +319,14 @@ class WaterfallPlotter:
         # ----------------------------------------------------
         bad_baselines: set[str] = set()
 
-        if baseline_rms and (bad_bl_only or bad_bl_abs is not None):
+        if baseline_rms and (bad_bl_only or rms_cut is not None):
             rms_vals = np.array(list(baseline_rms.values()))
             rms_med = np.nanmedian(rms_vals)
 
             for bl_id, rms in baseline_rms.items():
                 is_bad = False
 
-                if bad_bl_abs is not None and rms > bad_bl_abs:
+                if rms_cut is not None and rms > rms_cut:
                     is_bad = True
 
                 if bad_bl_sigma is not None and rms > bad_bl_sigma * rms_med:
