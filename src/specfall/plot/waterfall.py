@@ -268,8 +268,6 @@ CLI:
                 # Amplitude masked by flags
                 amp = np.abs(data)
                 amp = np.where(~flag, amp, np.nan)  # (rows, nchan_sel, npol)
-                # Convert amplitude to Jansky scale (1 Jy = 1e-26 W/m^2/Hz)
-                amp *= 1e26
 
                 # Bucket per (pol, baseline)
                 npol_here = amp.shape[-1]
