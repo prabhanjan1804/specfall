@@ -1,7 +1,7 @@
 <file name=0 path=/Users/phk/specfall/README.md># SpecFall
 
 
-**SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in CASA **Measurement Sets (.ms)**.  
+**SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.  
 
 It provides diagnostic *waterfall plots* with:  
 - **Frequency or channel** on the horizontal axis  
