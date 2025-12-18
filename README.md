@@ -62,7 +62,7 @@ or saving plots to disk using `outdir` and `outfile`.
 If only `outdir` is specified, SpecFall will automatically generate a filename  
 based on the scan, baseline, and frequency/channel range.
 
-New in v1.0:  
+New in v1.0.0:  
 SpecFall supports baseline-wise waterfall plotting with **automatic RMS computation and RMS-based baseline filtering**, allowing users to identify and visualise only those baselines exhibiting anomalously high noise levels in their time–frequency amplitude statistics.
 
 ### Getting Help
