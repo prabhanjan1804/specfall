@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio-astronomy MS Datasets
+# SpecFall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -26,7 +26,7 @@ class Meta:
     nrow: int
     nchan: int
     npol: int
-    scans: np.ndarray  # (nrow,) per-row scan number
+    scans: np.ndarray  # (nrow,) per row scan number
     times: np.ndarray  # (nrow,) seconds (MJD seconds)
     chan_freq: np.ndarray  # (nchan,) Hz
     data_col: str  # "CORRECTED_DATA" if exists else "DATA"

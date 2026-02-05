@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "specfall"
-version = "1.0.0"
-description = "Waterfall plotter for Radio Astronomy MS data"
+version = "1.0.1"
+description = "Waterfall plotter for Radio Astronomy data"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{name = "Prabhanjan H. Kulkarni"}]

@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio-astronomy MS Datasets
+# SpecFall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -16,6 +16,7 @@
 
 import argparse
 from .api import open as ms_open
+from .plot.waterfall import WaterfallPlotter
 
 def _parse_baseline_arg(s: str):
     """
@@ -59,6 +60,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pw = sub.add_parser("plot", help="Waterfall plot")
+    ph = sub.add_parser("help", help="Show detailed waterfall plotting options and defaults")
     pw.add_argument("ms", help="Path to .ms")
     pw.add_argument("--scan", type=int, nargs="*", help="Scan number(s)")
     pw.add_argument("--freq", help="MHz window fmin:fmax")
@@ -75,6 +77,10 @@ def main(argv=None):
     pw.add_argument("--rms-cut", type=float, default=None,help="RMS threshold for bad baseline detection (Jy)")
     
     args = p.parse_args(argv)
+
+    if args.cmd == "help":
+        WaterfallPlotter.help()
+        return
 
     if args.cmd == "plot":
         ms = ms_open(args.ms)

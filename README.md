@@ -1,16 +1,21 @@
-<file name=0 path=/Users/phk/specfall/README.md># SpecFall
+<file name=0 path=/Users/phk/specfall/README.md>SpecFall
 
 
-**SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.  
+**SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.
 
 It provides diagnostic *waterfall plots* with:  
 - **Frequency or channel** on the horizontal axis  
 - **Time** on the vertical axis  
 - **Amplitude** mapped to a color scale  
 
-SpecFall is designed for rapid inspection of raw or calibrated visibilities, helping identify instrumental effects, RFI, and general data quality issues.
+SpecFall is designed for rapid inspection of raw or calibrated visibilities, helping identify instrumental effects, RFI, and general data quality issues. At present, SpecFall supports visualization of target fields only, support for calibrator observation will be added in future releases.
 
 ---
+## New in v1.0.1:  
+- Documentation typos fixes and minor wording improvement
+- Improved output filename generation for saved plots
+- Baselines with (near-) fully flagged data are automatically skipped to avoid empty plots
+- Displays Observation Date and Time in legend
 
 ## Features
 - Flexible axis selection: **frequency** (MHz) or **channel number**  
@@ -19,7 +24,7 @@ SpecFall is designed for rapid inspection of raw or calibrated visibilities, hel
 - Frequency/channel windowing for zoomed analysis  
 - Polarisation handling: single pol or both pols (arranged top–bottom or side–by–side) 
 - Automatic RMS calculation per baseline
-- Optional filtering to plot only baselines exceeding a user-defined RMS threshold
+- Optional filtering to plot only baselines exceeding a user defined RMS threshold
 - Choice of any Matplotlib colormap (e.g. *viridis, plasma, inferno, cividis, gray, jet*)  
 - Simple **CLI** for batch jobs (suitable for SLURM/HPC environments)  
 - Pure Python API for integration into custom workflows  
@@ -62,12 +67,10 @@ or saving plots to disk using `outdir` and `outfile`.
 If only `outdir` is specified, SpecFall will automatically generate a filename  
 based on the scan, baseline, and frequency/channel range.
 
-New in v1.0.0:  
-SpecFall supports baseline-wise waterfall plotting with **automatic RMS computation and RMS-based baseline filtering**, allowing users to identify and visualise only those baselines exhibiting anomalously high noise levels in their time–frequency amplitude statistics.
 
 ### Getting Help
 
-SpecFall provides a built-in help system that documents all available plotting
+SpecFall provides a built in help system that documents all available plotting
 options, default values, and diagnostic features.
 
 From Python:
@@ -77,10 +80,10 @@ ms.plot.help()
 
 From the command line:
 ```bash
-specfall help
+specfall --help
 ```
 
-This prints a detailed overview of axis options, baseline handling, RMS-based
+This prints a detailed overview of axis options, baseline handling, RMS based
 filtering, polarisation layouts, and output settings.
 
 ### Python
@@ -108,14 +111,14 @@ ms.select(scan=1).plot.waterfall(
 )
 
 # Plot only baselines with RMS above a threshold (Jy)
-ms.select(scan=2).plot.waterfall(
+ms.select(fmin=1355.0, fmax=1375.0).plot.waterfall(
     rms_cut=5.0,
     bad_bl_only=True,
     cmap="plasma",
     outdir="bad_baselines"
 )
 
-# Save per-baseline plots with a custom filename prefix
+# Save per baseline plots with a custom filename prefix
 ms.select(scan=2).plot.waterfall(
     baseline="avg",          # average across all baselines
     log_amp=False,
@@ -154,7 +157,7 @@ specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap vi
   - Recommended: run SpecFall inside **WSL2 (Ubuntu)** for full functionality.  
   - Advanced users may attempt a manual CASACORE + python-casacore build, but this is not officially supported.  
 - By default, SpecFall averages visibilities per baseline per timestamp; baseline averaging across the array is optional.
-- RMS is computed per baseline from the plotted time–frequency waterfall data and expressed in Jansky.
+- RMS is computed per baseline from the plotted time-frequency waterfall data and expressed in Jansky.
 - Baseline filtering is optional and disabled by default.
 - When filtering is enabled, only baselines exceeding the RMS threshold are visualized, reducing the number of output images for large datasets.
 - The tool is intended for diagnostic inspection rather than calibration.

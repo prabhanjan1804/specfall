@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio-astronomy MS Datasets
+# SpecFall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -27,7 +27,22 @@ from collections import defaultdict
 import matplotlib.dates as _mdates
 from datetime import datetime, timezone
 
+
 POL_ALIASES = {"xx": 0, "yy": 1, "rr": 0, "ll": 1, "xy": 0, "yx": 1}
+
+def _baseline_display(bl_id: str) -> str:
+    """Pretty baseline label for titles/logs."""
+    return bl_id.replace("-", "&")
+
+
+def _baseline_file(bl_id: str) -> str:
+    """Filesystem safe baseline label for filenames."""
+    s = _baseline_display(bl_id)
+    # remove/replace characters that can cause trouble in paths or shells
+    s = s.replace(" ", "").replace("/", "_")
+    # '&' is a shell special character; keep it for display but not filenames
+    s = s.replace("&", "_")
+    return s
 
 def _ms_time_to_mpl_dates(times_sec: np.ndarray) -> np.ndarray:
     """
@@ -41,13 +56,13 @@ def _ms_time_to_mpl_dates(times_sec: np.ndarray) -> np.ndarray:
 
 def _nan_group_mean_by_time(values: np.ndarray, times_1d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
-    Aggregate along axis-0 by identical times in `times_1d`, computing nanmean.
+    Aggregate along axis 0 by identical times in `times_1d`, computing nanmean.
     values: (N, C, P)  float array with NaNs for flagged samples
     times_1d: (N,)  numeric times aligned to values
 
     Returns:
       unique_times: (G,) sorted unique time values
-      mean_vals:    (G, C, P) nan-mean per time-bin
+      mean_vals:    (G, C, P) nan mean per time bin
     """
     if values.size == 0:
         return np.array([], dtype=times_1d.dtype), values[:0]
@@ -69,7 +84,7 @@ def _nan_group_mean_by_time(values: np.ndarray, times_1d: np.ndarray) -> tuple[n
     sums = np.add.reduceat(v_filled, idx_start, axis=0)
     cnts = np.add.reduceat(valid.astype(np.float64), idx_start, axis=0)
 
-    # Avoid divide-by-zero; keep NaN where no valid samples
+    # Avoid divide by zero. keep NaN where no valid samples
     out = np.divide(sums, cnts, out=np.full_like(sums, np.nan), where=cnts > 0)
 
     unique_times = t_sorted[idx_start]
@@ -92,14 +107,14 @@ SpecFall Waterfall Plotter — Options Overview
 =============================================
 
 Core axes
----------
+-------------------
 x_axis        : 'freq' | 'channel'   (default: 'freq')
                 X-axis as frequency (MHz) or channel index.
 log_amp       : bool                 (default: True)
                 Plot log10(amplitude) instead of linear amplitude.
 
 Polarisation
-------------
+--------------------
 pol           : None | int | str
                 None     → average over polarisations
                 int      → select pol index
@@ -108,18 +123,29 @@ layout        : 'tb' | 'lr'           (default: 'tb')
                 Layout when pol='both'.
 
 Baselines
----------
-baseline      : 'avg' | (a1,a2) | [(a1,a2), ...]
-                'avg' → average across all baselines
+-------------------
+SpecFall currently plots baseline wise by default.
+To reduce outputs, use RMS based filtering or skip fully flagged baselines.
+
+baseline     : tuple | list | (default: all baselines)
                 tuple → single baseline
                 list  → multiple baselines
-bl_cols       : int                  (default: 2)
-                Grid columns for multi-baseline plots.
+
+bad_bl_only   : bool  (default: False)
+                If True, only baselines exceeding RMS thresholds are plotted.
+bad_bl_sigma  : float (default: 3.0)
+                Flag baseline if RMS > sigma × median RMS.
+rms_cut       : float | None
+                Absolute RMS cutoff
+skip_fully_flagged : bool (default: True)
+                Skip baselines that are fully flagged.
+flagged_frac_cut   : float (default: 0.999)
+                Skip baselines with flagged fraction >= this value.
 
 Amplitude & scaling
 -------------------
-amp_unit      : str                  (default: 'Jy')
-                Display unit for amplitude.
+amp_unit      : str                  (default: '')
+                Display unit for amplitude. If omitted, SpecFall uses 'Jy' when plotting CORRECTED_DATA; otherwise no unit is shown.
 amp_scale     : float                (default: 1.0)
                 Additional multiplicative scale factor.
 vmin, vmax    : float | None
@@ -128,7 +154,7 @@ cmap          : str                  (default: 'viridis')
                 Matplotlib colormap.
 
 RMS diagnostics
----------------
+-------------------
 RMS is computed per baseline and displayed on each panel.
 
 bad_bl_only   : bool                 (default: False)
@@ -136,24 +162,25 @@ bad_bl_only   : bool                 (default: False)
 bad_bl_sigma  : float                (default: 3.0)
                 Flag baseline if RMS > sigma × median RMS.
 rms_cut    : float | None
-                Absolute RMS cutoff in Jy (OR condition with sigma).
+                Absolute RMS cutoff in the same units as the plotted amplitude (OR condition with sigma).
 
 Output
-------
+-------------------
 outdir        : str | None
                 Directory to save figures (interactive if None).
 outfile       : str | None
-                Base filename (auto-generated if None).
+                Base filename (auto generated if None).
 
 Time axis
----------
+-------------------
 Y-axis shows UTC timestamps derived from MS TIME column.
 
 Examples
---------
+-------------------
 Python:
-  ms.plot.waterfall(pol='both', baseline='avg')
   ms.plot.waterfall(bad_bl_only=True, bad_bl_sigma=4.0)
+  ms.select(scan=2).plot.waterfall(baseline=(2, 5),cmap="inferno",outdir="results")
+  ms.select(fmin=1355.0, fmax=1375.0).plot.waterfall(baseline=[(0, 1), (0, 60), (41, 59)])
 
 CLI:
   specfall plot data.ms --pol both --bad-bl-only --bad-bl-sigma 4
@@ -162,32 +189,30 @@ CLI:
 """
         print(msg)
 
-    def waterfall(
-        self,
-        x_axis: str = "freq",          # "freq" or "channel"
-        log_amp: bool = True,         # plot log10(amplitude)
-        pol: str | int | None = None,  # override selection
-        layout: str = "tb",
-        vmax: float | None = None,
-        vmin: float | None = None,
-        cmap: str = "viridis",
-        title: str | None = None,
-        amp_scale: float = 1.0,
-        amp_unit: str = "Jy",
-        mhz_tick: float | None = 1.0,
-        mhz_label: float | None = 5.0,
-        outdir: str | None = None,
-        outfile: str | None = None,
-        baseline: str | tuple[int, int] | list[tuple[int, int]] = "avg",
-        bl_cols: int = 2,
-        bad_bl_only: bool = False,  # Bool= True plot only bad baselines else all. Default: False
-        bad_bl_sigma: float=3.0,    #Default Threshold for bad baseline detection. Default: 3.0 => RMS > 3x mdeian
-        rms_cut: float | None = None, # Absolute RMS cut off in Jy (In OR logic with sigma cut)
-    ):
+def waterfall(
+    self,
+    x_axis: str = "freq",                 # "freq" or "channel"
+    log_amp: bool = True,
+    pol: str | int | None = None,         # None | int | "xx"/"yy"/... | "both"
+    layout: str = "tb",                   # for pol="both": "tb" or "lr"
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str = "viridis",
+    title: str | None = None,
+    amp_scale: float = 1.0,
+    amp_unit: str = "",
+    outdir: str | None = None,
+    outfile: str | None = None,
+    bad_bl_only: bool = False,
+    bad_bl_sigma: float = 3.0,
+    rms_cut: float | None = None,
+    skip_fully_flagged: bool = True,
+    flagged_frac_cut: float = 0.999,
+):
         """
-        Plot baseline-wise waterfalls, one PNG per (polarisation, baseline).
+        Plot baseline wise waterfalls, one PNG per (polarisation, baseline).
         This simpler mode mirrors the reference script: for each selected scan
-        we read all rows via TAQL, compute per-row amplitudes (|DATA| masked by FLAG),
+        we read all rows via TAQL, compute per row amplitudes (|DATA| masked by FLAG),
         bucket by (pol, baseline), sort by time and plot a waterfall with Y as
         time index (tick labels show UTC).
         """
@@ -195,6 +220,12 @@ CLI:
         meta = self.ms.meta
         sel = self.ms._sel
         pol = pol if pol is not None else sel.pol
+        # Amplitude units depend on calibration state.
+        # If the user did not specify a unit, choose a sensible default from the selected data column.
+        if (amp_unit is None or str(amp_unit).strip() == "") and str(getattr(meta, "data_col", "")).upper() == "CORRECTED_DATA":
+            amp_unit = "Jy"
+        else:
+            amp_unit = "" if amp_unit is None else str(amp_unit)
 
         # Channel window selection
         c0, c1 = _resolve_channel_window(meta, sel)
@@ -216,16 +247,23 @@ CLI:
             x_min, x_max = float(freqs_mhz[0]), float(freqs_mhz[-1])
             xlabel = "Frequency [MHz]"
 
-        # Output directory
-        if outdir is None:
-            outdir = "."
-        os.makedirs(outdir, exist_ok=True)
+        # Output handling
+        # If neither outdir nor outfile is provided, we show interactively instead of saving.
+        save_outputs = (outdir is not None) or (outfile is not None)
+        if save_outputs:
+            outdir = outdir or "."
+            os.makedirs(outdir, exist_ok=True)
 
         # Data buckets: dict[pol_index]["a-b"] -> list of (time_sec, amp_vec)
         baseline_data: dict[int, dict[str, list[tuple[float, np.ndarray]]]] = defaultdict(lambda: defaultdict(list))
-
+        baseline_allamps: dict[str, list[np.ndarray]] = defaultdict(list)
         with table(self.ms.path, readonly=True) as T:
-            # Iterate requested scans using TAQL to handle non-contiguous rows
+            ant_tab = table(T.getkeyword("ANTENNA"), readonly=True)
+            try:
+                ant_names = ant_tab.getcol("NAME").astype(str)
+            finally:
+                ant_tab.close()
+            # Iterate requested scans using TAQL to handle non contiguous rows
             for sc in scans:
                 q = T.query(f"SCAN_NUMBER=={int(sc)}")
                 try:
@@ -268,12 +306,21 @@ CLI:
                 # Amplitude masked by flags
                 amp = np.abs(data)
                 amp = np.where(~flag, amp, np.nan)  # (rows, nchan_sel, npol)
+                amp = amp * float(amp_scale)
 
                 # Bucket per (pol, baseline)
                 npol_here = amp.shape[-1]
                 for r in range(amp.shape[0]):
-                    bl_id = f"{min(int(a1[r]), int(a2[r]))}-{max(int(a1[r]), int(a2[r]))}"
+                    i1, i2 = int(a1[r]), int(a2[r])
+                    n1, n2 = ant_names[i1], ant_names[i2]
+
+                    # keep ordering stable so "m001&m002" == "m002&m001"
+                    if n1 <= n2:
+                        bl_id = f"{n1}-{n2}"
+                    else:
+                        bl_id = f"{n2}-{n1}"
                     t = float(times[r])
+                    baseline_allamps[bl_id].append(np.nanmax(amp[r, :, :], axis=-1))
                     for p_idx in range(npol_here):
                         # Selection of pol: if user asked a concrete pol index/string, filter here
                         if isinstance(pol, int) and p_idx != pol:
@@ -291,37 +338,34 @@ CLI:
             raise RuntimeError("Nothing to plot: selection returned no data.")
         
         # ----------------------------------------------------
-        # Compute RMS per baseline (across all times & pols)
+        # Compute RMS per baseline (across all times; polarization agnostic)
+        # baseline_allamps: dict[bl_id] = list of 1D spectra (nchan_sel,)
         # ----------------------------------------------------
         baseline_rms: dict[str, float] = {}
+        for bl_id, rows in baseline_allamps.items():
+            if not rows:
+                continue
 
-        for p_idx, bl_dict in baseline_data.items():
-            for bl_id, entries in bl_dict.items():
-                if not entries:
-                    continue
-
-                amps = np.array([a for _, a in entries], dtype=float)
-                if amps.size == 0:
-                    continue
-
-                rms = np.sqrt(np.nanmean(amps ** 2))
-
-                # Conservative across polarisations
-                if bl_id in baseline_rms:
-                    baseline_rms[bl_id] = max(baseline_rms[bl_id], rms)
-                else:
-                    baseline_rms[bl_id] = rms
-        
+            amps = np.asarray(rows, dtype=float)   # (nrows_for_bl, nchan_sel)
+            if amps.size == 0:
+                continue
+            rms = np.sqrt(np.nanmean(amps ** 2))
+            if not np.isfinite(rms):
+                continue  # skip fully flagged baselines
+            baseline_rms[bl_id] = rms
         # ----------------------------------------------------
         # Identify bad baselines (optional filtering)
         # ----------------------------------------------------
         bad_baselines: set[str] = set()
 
         if baseline_rms and (bad_bl_only or rms_cut is not None):
-            rms_vals = np.array(list(baseline_rms.values()))
-            rms_med = np.nanmedian(rms_vals)
+            rms_vals = np.array(list(baseline_rms.values()), dtype=float)
+            rms_vals = rms_vals[np.isfinite(rms_vals)]
+            rms_med = np.median(rms_vals) if rms_vals.size else np.nan
 
             for bl_id, rms in baseline_rms.items():
+                if not np.isfinite(rms):
+                    continue
                 is_bad = False
 
                 if rms_cut is not None and rms > rms_cut:
@@ -334,8 +378,14 @@ CLI:
                     bad_baselines.add(bl_id)
 
             log.info(
-                f"Baseline RMS median = {rms_med:.3e} Jy | "
+                f"Baseline RMS median = {rms_med:.3e} {amp_unit} | "
                 f"Flagged {len(bad_baselines)}/{len(baseline_rms)} baselines as bad"
+            )
+
+        if bad_bl_only and not bad_baselines:
+            log.warning(
+                "bad_bl_only=True but no bad baselines were identified. "
+                "No plots will be produced. Consider lowering thresholds (bad_bl_sigma / rms_cut)."
             )
 
         # Colormap and scaling
@@ -346,16 +396,24 @@ CLI:
 
         # Union of all baseline IDs observed across pol buckets
         all_baselines = sorted(set().union(*[set(d.keys()) for d in baseline_data.values()]) if baseline_data else [])
+        # Helper to compute flagged fraction of a 2D amp array
+        def _flagged_fraction(amps2d: np.ndarray) -> float:
+            # amps2d shape: (ntime, nchan)
+            total = amps2d.size
+            if total == 0:
+                return 1.0
+            nflag = np.count_nonzero(~np.isfinite(amps2d))
+            return nflag / total
 
         # Helper to render a single panel given entries (list of (t, amp_vec))
         def _render_panel(ax, entries, xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix):
             entries.sort(key=lambda x: x[0])
             times_sorted = [datetime(1858, 11, 17, tzinfo=timezone.utc) + _dt.timedelta(seconds=t) for t, _ in entries]
             amps = np.array([a for _, a in entries], dtype=float)  # (n_rows, nchan_sel)
+            ffrac = _flagged_fraction(amps)
             # RMS calculation (ignoring NaNs)
             rms = np.sqrt(np.nanmean(amps ** 2))
             plot_mat = np.log10(np.clip(amps, 1e-12, None)) if log_amp else amps
-
 
             # Autoscale if needed
             vmin_eff, vmax_eff = vmin, vmax
@@ -373,6 +431,12 @@ CLI:
                 plot_mat, aspect="auto", origin="lower",
                 extent=extent, vmin=vmin_eff, vmax=vmax_eff, cmap=cm
             )
+            # ---- Observation date/time annotation (UTC) ----
+            t_start = times_sorted[0]
+            t_end = times_sorted[-1]
+            date_str = t_start.strftime("%Y-%m-%d")
+            time_range = f"{t_start.strftime('%H:%M:%S')} – {t_end.strftime('%H:%M:%S')} UTC"
+            
             ax.set_xlabel(xlabel)
             nt = len(times_sorted)
             yticks = np.linspace(0, nt - 1, min(6, nt), dtype=int) if nt > 0 else []
@@ -382,11 +446,14 @@ CLI:
             ax.set_ylabel("Time [UTC]")
             if title_suffix:
                 ax.set_title(title_suffix)
-            ax.text(0.99,0.02, f"RMS = {rms:.3e} {amp_unit}" + (" (log)" if log_amp else ""),
+            ax.text(0.99,0.02, f"RMS = {rms:.3e}" + (f" {amp_unit}" if str(amp_unit).strip() else "") + (" (log)" if log_amp else ""),
                     transform=ax.transAxes, ha="right", va="bottom", fontsize=9, bbox=dict(boxstyle='round', facecolor="white", alpha=0.7))
+            ax.text(0.01, 0.02,f"Date: {date_str}\nTime: {time_range}",transform=ax.transAxes,
+                    ha="left", va="bottom",fontsize=9,bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
             cbar = plt.colorbar(im, ax=ax)
-            cbar.set_label("Amplitude [Jy]" + (" (log10)" if log_amp else ""))
-            return im
+            unit_suffix = f" [{amp_unit}]" if str(amp_unit).strip() else ""
+            cbar.set_label(f"Amplitude{unit_suffix}" + (" (log10)" if log_amp else ""))
+            return im,rms,ffrac
 
         if isinstance(pol, str) and pol.lower() == "both":
             # Plot one figure per baseline* with two panels
@@ -411,21 +478,29 @@ CLI:
 
                 # Left/top: first pol
                 title0 = (title or "") + (f"  (pol {p0})")
-                _render_panel(axes[0], list(baseline_data[p0][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title0)
+                im0, rms0, ffrac0 = _render_panel(axes[0], list(baseline_data[p0][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title0)
 
                 # Right/bottom: second pol
                 title1 = (title or "") + (f"  (pol {p1})")
-                _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
+                im1, rms1, ffrac1 = _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
 
-                fig.suptitle(f"Baseline {bl_id.replace('-', '&')}", y=0.995, fontsize=12)
+                fig.suptitle(f"Baseline {_baseline_display(bl_id)}", y=0.995, fontsize=12)
                 fig.tight_layout(rect=(0,0,1,0.97))
-
+                if skip_fully_flagged:
+                    if (ffrac0 >= flagged_frac_cut) and (ffrac1 >= flagged_frac_cut):
+                        log.info(
+                            f"Skipping baseline {bl_id} too high flagged fraction "
+                            f"pol {p0} {ffrac0:.3f}, pol {p1} {ffrac1:.3f}"     
+                                 )
+                        plt.close(fig)
+                        continue
+    
                 # Filename
                 if outfile:
                     stem, ext = os.path.splitext(outfile)
                     if not ext:
                         ext = ".png"
-                    fname = f"{stem}_polboth_baseline{bl_id.replace('-', '&')}{ext}"
+                    fname = f"{stem}_polboth_baseline{_baseline_file(bl_id)}{ext}"
                 else:
                     if x_axis == "channel":
                         rng = f"{int(x_min)}-{int(x_max)}ch"
@@ -434,14 +509,17 @@ CLI:
                     scan_tag = (
                         "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
                     )
-                    fname = f"waterfall_scans{scan_tag}_polboth_bl{bl_id.replace('-', '&')}_{rng}.png"
-                save_path = os.path.join(outdir, fname)
-                plt.savefig(save_path, dpi=200, bbox_inches="tight")
-                plt.close(fig)
-                print(f"[SpecFall] Saved: {save_path}")
-                saved.append(save_path)
+                    fname = f"waterfall_scans{scan_tag}_polboth_bl{_baseline_file(bl_id)}_{rng}.png"
+                if save_outputs:
+                    save_path = os.path.join(outdir, fname)
+                    plt.savefig(save_path, dpi=200, bbox_inches="tight")
+                    plt.close(fig)
+                    print(f"[SpecFall] Saved: {save_path}")
+                    saved.append(save_path)
+                else:
+                    plt.show()
         else:
-            # Single-pol mode: one figure per (pol, baseline) as before
+            # Single pol mode: one figure per (pol, baseline) as before
             for p_idx in sorted(baseline_data.keys()):
                 bl_dict = baseline_data[p_idx]
                 for bl_id in sorted(bl_dict.keys()):
@@ -453,14 +531,20 @@ CLI:
                     if not entries:
                         continue
                     fig, ax = plt.subplots(figsize=(10, 5))
-                    title_suffix = (title or f"Baseline {bl_id.replace('-', '&')} - Polarisation {p_idx}")
-                    _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
-
+                    title_suffix = (title or f"Baseline {_baseline_display(bl_id)} - Polarisation {p_idx}")
+                    im, rms, ffrac = _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
+                    if skip_fully_flagged and (ffrac >= flagged_frac_cut):
+                        log.info(
+                            f"Skipping baseline {bl_id} (pol {p_idx}): fully flagged or too high flagged fraction"
+                            f"(flagged fraction {ffrac:.3f})."
+                        )
+                        plt.close(fig)
+                        continue
                     if outfile:
                         stem, ext = os.path.splitext(outfile)
                         if not ext:
                             ext = ".png"
-                        fname = f"{stem}_pol{p_idx}_baseline{bl_id.replace('-', '&')}{ext}"
+                        fname = f"{stem}_pol{p_idx}_baseline{_baseline_file(bl_id)}{ext}"
                     else:
                         if x_axis == "channel":
                             rng = f"{int(x_min)}-{int(x_max)}ch"
@@ -469,14 +553,17 @@ CLI:
                         scan_tag = (
                             "all" if sel.scan is None else "-".join(map(str, (sel.scan if isinstance(sel.scan, (list, tuple)) else [sel.scan])))
                         )
-                        fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{bl_id.replace('-', '&')}_{rng}.png"
-                    save_path = os.path.join(outdir, fname)
-                    plt.savefig(save_path, dpi=200, bbox_inches="tight")
-                    plt.close(fig)
-                    print(f"[SpecFall] Saved: {save_path}")
-                    saved.append(save_path)
+                        fname = f"waterfall_scans{scan_tag}_pol{p_idx}_bl{_baseline_file(bl_id)}_{rng}.png"
+                    if save_outputs:
+                        save_path = os.path.join(outdir, fname)
+                        plt.savefig(save_path, dpi=200, bbox_inches="tight")
+                        plt.close(fig)
+                        print(f"[SpecFall] Saved: {save_path}")
+                        saved.append(save_path)
+                    else:
+                        plt.show()
 
-        return
+        return saved if save_outputs else None
 
 
 def _resolve_channel_window(meta, sel):
@@ -509,7 +596,7 @@ def _resolve_pol(pol):
 def _amps_for_pol(cube, psel):
     """Return list of 2D arrays (ntime, nchan) per panel from (ntime, nchan, npol).
     - psel == 'both' -> two panels (first two pol indices)
-    - psel is slice(None) -> average over pol dimension with NaN-safe mean (no warnings)
+    - psel is slice(None) -> average over pol dimension with NaN safe mean (no warnings)
     - psel is int -> single selected pol
     """
     if psel == "both":
@@ -519,7 +606,7 @@ def _amps_for_pol(cube, psel):
         return outs
 
     if isinstance(psel, slice):
-        # NaN-safe mean over pol axis without runtime warnings for all-NaN rows
+        # NaN safe mean over pol axis without runtime warnings for all NaN rows
         with np.errstate(invalid="ignore", divide="ignore"):
             m = np.nanmean(cube, axis=-1)
         return [m]

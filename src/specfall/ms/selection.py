@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio-astronomy MS Datasets
+# SpecFall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -29,5 +29,5 @@ class Selection:
     pol: str | int | None = None  # "both", 0, 1, "XX", "YY", etc.
 
     def updated(self, **kwargs) -> "Selection":
-        """Return a new Selection with provided (non-None) fields replaced."""
+        """Return a new Selection with provided (non None) fields replaced."""
         return replace(self, **{k: v for k, v in kwargs.items() if v is not None})
