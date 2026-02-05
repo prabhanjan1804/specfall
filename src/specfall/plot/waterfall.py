@@ -483,12 +483,11 @@ CLI:
                 ax.set_title(title_suffix)
             ax.text(0.99,0.02, f"RMS = {rms:.3e}" + (f" {amp_unit}" if str(amp_unit).strip() else "") + (" (log)" if log_amp else ""),
                     transform=ax.transAxes, ha="right", va="bottom", fontsize=9, bbox=dict(boxstyle='round', facecolor="white", alpha=0.7))
-            ax.text(0.01, 0.02,f"Date: {date_str}\nTime: {time_range}",transform=ax.transAxes,
-                    ha="left", va="bottom",fontsize=9,bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
+            # Removed date/time ax.text here. Now returned for figure-level placement.
             cbar = plt.colorbar(im, ax=ax)
             unit_suffix = f" [{amp_unit}]" if str(amp_unit).strip() else ""
             cbar.set_label(f"Amplitude{unit_suffix}" + (" (log10)" if log_amp else ""))
-            return im,rms,ffrac
+            return im, rms, ffrac, date_str, time_range
 
         if isinstance(pol, str) and pol.lower() == "both":
             # Plot one figure per baseline* with two panels
@@ -513,13 +512,21 @@ CLI:
 
                 # Left/top: first pol
                 title0 = (title or "") + (f"  (pol {p0})")
-                im0, rms0, ffrac0 = _render_panel(axes[0], list(baseline_data[p0][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title0)
+                im0, rms0, ffrac0, date_str, time_range = _render_panel(axes[0], list(baseline_data[p0][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title0)
 
                 # Right/bottom: second pol
                 title1 = (title or "") + (f"  (pol {p1})")
-                im1, rms1, ffrac1 = _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
+                im1, rms1, ffrac1, _, _ = _render_panel(axes[1], list(baseline_data[p1][bl_id]), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title1)
 
                 fig.suptitle(f"Baseline {_baseline_display(bl_id)}", y=0.995, fontsize=12)
+                # Place date/time box outside axes, top-right
+                fig.text(
+                    0.99, 0.99,
+                    f"Date: {date_str}\nTime: {time_range}",
+                    ha="right", va="top",
+                    fontsize=9,
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.85)
+                )
                 fig.tight_layout(rect=(0,0,1,0.97))
                 if skip_fully_flagged:
                     if (ffrac0 >= flagged_frac_cut) and (ffrac1 >= flagged_frac_cut):
@@ -567,7 +574,14 @@ CLI:
                         continue
                     fig, ax = plt.subplots(figsize=(10, 5))
                     title_suffix = (title or f"Baseline {_baseline_display(bl_id)} - Polarisation {p_idx}")
-                    im, rms, ffrac = _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
+                    im, rms, ffrac, date_str, time_range = _render_panel(ax, list(entries), xlabel, x_min, x_max, log_amp, vmin, vmax, cm, title_suffix)
+                    fig.text(
+                        0.99, 0.99,
+                        f"Date: {date_str}\nTime: {time_range}",
+                        ha="right", va="top",
+                        fontsize=9,
+                        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85)
+                    )
                     if skip_fully_flagged and (ffrac >= flagged_frac_cut):
                         log.info(
                             f"Skipping baseline {bl_id} (pol {p_idx}): fully flagged or too high flagged fraction"
