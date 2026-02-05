@@ -261,7 +261,7 @@ CLI:
         with table(self.ms.path, readonly=True) as T:
             ant_tab = table(T.getkeyword("ANTENNA"), readonly=True)
             try:
-                ant_names = ant_tab.getcol("NAME").astype(str)
+                ant_names = np.asarray(ant_tab.getcol("NAME"), dtype=str)
             finally:
                 ant_tab.close()
             # ---- Optional baseline selection ----
