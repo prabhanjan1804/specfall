@@ -189,26 +189,26 @@ CLI:
 """
         print(msg)
 
-def waterfall(
-    self,
-    x_axis: str = "freq",                 # "freq" or "channel"
-    log_amp: bool = True,
-    pol: str | int | None = None,         # None | int | "xx"/"yy"/... | "both"
-    layout: str = "tb",                   # for pol="both": "tb" or "lr"
-    vmin: float | None = None,
-    vmax: float | None = None,
-    cmap: str = "viridis",
-    title: str | None = None,
-    amp_scale: float = 1.0,
-    amp_unit: str = "",
-    outdir: str | None = None,
-    outfile: str | None = None,
-    bad_bl_only: bool = False,
-    bad_bl_sigma: float = 3.0,
-    rms_cut: float | None = None,
-    skip_fully_flagged: bool = True,
-    flagged_frac_cut: float = 0.999,
-):
+    def waterfall(
+        self,
+        x_axis: str = "freq",                 # "freq" or "channel"
+        log_amp: bool = True,
+        pol: str | int | None = None,         # None | int | "xx"/"yy"/... | "both"
+        layout: str = "tb",                   # for pol="both": "tb" or "lr"
+        vmin: float | None = None,
+        vmax: float | None = None,
+        cmap: str = "viridis",
+        title: str | None = None,
+        amp_scale: float = 1.0,
+        amp_unit: str = "",
+        outdir: str | None = None,
+        outfile: str | None = None,
+        bad_bl_only: bool = False,
+        bad_bl_sigma: float = 3.0,
+        rms_cut: float | None = None,
+        skip_fully_flagged: bool = True,
+        flagged_frac_cut: float = 0.999,
+    ):
         """
         Plot baseline wise waterfalls, one PNG per (polarisation, baseline).
         This simpler mode mirrors the reference script: for each selected scan
