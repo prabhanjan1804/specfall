@@ -1,5 +1,7 @@
-<file name=0 path=/Users/phk/specfall/README.md>SpecFall
+<file name=0 path=/Users/phk/specfall/README.md>
 
+
+# SpecFall
 
 **SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.
 
@@ -120,7 +122,6 @@ ms.select(fmin=1355.0, fmax=1375.0).plot.waterfall(
 
 # Save per baseline plots with a custom filename prefix
 ms.select(scan=2).plot.waterfall(
-    baseline="avg",          # average across all baselines
     log_amp=False,
     cmap="viridis",
     outdir="plots",

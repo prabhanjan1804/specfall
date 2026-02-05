@@ -203,6 +203,7 @@ CLI:
         amp_unit: str = "",
         outdir: str | None = None,
         outfile: str | None = None,
+        baseline: tuple[int, int] | list[tuple[int, int]] | str | None = None,
         bad_bl_only: bool = False,
         bad_bl_sigma: float = 3.0,
         rms_cut: float | None = None,
@@ -263,6 +264,38 @@ CLI:
                 ant_names = ant_tab.getcol("NAME").astype(str)
             finally:
                 ant_tab.close()
+            # ---- Optional baseline selection ----
+            # baseline can be (ant1, ant2), [(ant1, ant2), ...], or a name string "m001-m002"/"m001&m002"
+            baseline_allow: set[str] | None = None
+            if baseline is not None:
+                baseline_allow = set()
+
+                def _mk_bl_id(n1: str, n2: str) -> str:
+                    return f"{n1}-{n2}" if n1 <= n2 else f"{n2}-{n1}"
+
+                if isinstance(baseline, tuple) and len(baseline) == 2:
+                    i1, i2 = int(baseline[0]), int(baseline[1])
+                    baseline_allow.add(_mk_bl_id(str(ant_names[i1]), str(ant_names[i2])))
+
+                elif isinstance(baseline, list):
+                    for b in baseline:
+                        if not (isinstance(b, tuple) and len(b) == 2):
+                            raise ValueError("Each baseline in list must be a tuple (ant1, ant2)")
+                        i1, i2 = int(b[0]), int(b[1])
+                        baseline_allow.add(_mk_bl_id(str(ant_names[i1]), str(ant_names[i2])))
+
+                elif isinstance(baseline, str):
+                    b = baseline.strip().replace("&", "-")
+                    parts = [p for p in b.split("-") if p]
+                    if len(parts) == 2:
+                        baseline_allow.add(_mk_bl_id(parts[0], parts[1]))
+                    else:
+                        baseline_allow.add(b)
+
+                else:
+                    raise ValueError(
+                        'baseline must be None, (a1,a2), [(a1,a2), ...], or a baseline name string like "m001-m002"'
+                    )
             # Iterate requested scans using TAQL to handle non contiguous rows
             for sc in scans:
                 q = T.query(f"SCAN_NUMBER=={int(sc)}")
@@ -319,6 +352,8 @@ CLI:
                         bl_id = f"{n1}-{n2}"
                     else:
                         bl_id = f"{n2}-{n1}"
+                    if baseline_allow is not None and bl_id not in baseline_allow:
+                        continue
                     t = float(times[r])
                     baseline_allamps[bl_id].append(np.nanmax(amp[r, :, :], axis=-1))
                     for p_idx in range(npol_here):

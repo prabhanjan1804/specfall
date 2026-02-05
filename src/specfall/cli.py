@@ -19,23 +19,23 @@ from .api import open as ms_open
 from .plot.waterfall import WaterfallPlotter
 
 def _parse_baseline_arg(s: str):
-    """
-    Parse --baseline argument into:
-      - 'avg' (str), or
-      - [(a,b), (c,d), ...] list of integer tuples.
-    Accepts spaces; pairs separated by commas; antennas separated by '-'.
-    Examples: 'avg', '3-7', '1-2, 3-7 ,10-11'
+    """Parse --baseline into either:
+      - None (meaning: all baselines), or
+      - (a,b) tuple of ints for a single baseline, or
+      - [(a,b), (c,d), ...] list of int tuples for multiple baselines.
+
+    Accepts spaces; pairs separated by commas; antennas separated by '-' (or '&').
+    Examples: '3-7', '1-2, 3-7 ,10-11'
     """
     if s is None:
-        return "avg"
-    s = s.strip().lower()
-    if s == "avg":
-        return "avg"
+        return None
 
-    # normalize spaces
-    s = s.replace(" ", "")
+    s = s.strip()
     if not s:
-        return "avg"
+        return None
+
+    # normalize spaces and allow '&' as a separator
+    s = s.replace(" ", "").replace("&", "-")
 
     pairs = []
     for part in s.split(","):
@@ -71,10 +71,14 @@ def main(argv=None):
     pw.add_argument("--layout", choices=["tb", "lr"], default="tb")
     pw.add_argument("--outdir", help="Directory to save plot instead of showing")
     pw.add_argument("--outfile", help="Optional filename for saved plot (default: waterfall.png)")
-    pw.add_argument("--baseline",default="avg",help='Baseline selection: "avg" | "a-b" | "a-b,c-d,..." (antenna IDs, 0-based).')
+    pw.add_argument(
+        "--baseline",
+        help='Select baseline(s) by antenna IDs (0-based): "a-b" or "a-b,c-d,...". If omitted, all baselines are plotted.'
+    )
     pw.add_argument("--bl-cols",type=int,default=2,help="Number of columns when plotting multiple baselines.")
     pw.add_argument("--bad-bl-only", action="store_true", help="Only plot baselines flagged as bad")
     pw.add_argument("--rms-cut", type=float, default=None,help="RMS threshold for bad baseline detection (Jy)")
+    pw.add_argument("--cmap", default="viridis", help="Matplotlib colormap name (e.g. viridis, plasma, inferno)")
     
     args = p.parse_args(argv)
 
