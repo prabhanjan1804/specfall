@@ -11,7 +11,7 @@ It provides diagnostic *waterfall plots* with:
 SpecFall is designed for rapid inspection of raw or calibrated visibilities, helping identify instrumental effects, RFI, and general data quality issues. At present, SpecFall supports visualization of target fields only, support for calibrator observation will be added in future releases.
 
 ---
-## New in v1.0.1:  
+## New in v1.0.1: IN TESTING PHASE  
 - Documentation typos fixes and minor wording improvement
 - Improved output filename generation for saved plots
 - Baselines with (near-) fully flagged data are automatically skipped to avoid empty plots
