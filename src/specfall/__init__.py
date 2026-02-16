@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio astronomy MS Datasets
+# specfall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-"""SpecFall – quicklook waterfall plots for Measurement Sets.
+"""specfall – quicklook waterfall plots for Measurement Sets.
 
 Public API:
     open(path) -> MeasurementSet

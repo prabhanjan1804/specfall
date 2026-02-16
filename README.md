@@ -1,19 +1,19 @@
 <file name=0 path=/Users/phk/specfall/README.md>
 
 
-# SpecFall
+# Specfall
 
-**SpecFall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.
+**Specfall** is a lightweight Python package for quick–look visualization of **radio interferometric data** stored in **Measurement Sets (.ms)** data.
 
 It provides diagnostic *waterfall plots* with:  
 - **Frequency or channel** on the horizontal axis  
 - **Time** on the vertical axis  
 - **Amplitude** mapped to a color scale  
 
-SpecFall is designed for rapid inspection of raw or calibrated visibilities, helping identify instrumental effects, RFI, and general data quality issues. At present, SpecFall supports visualization of target fields only, support for calibrator observation will be added in future releases.
+specfall is designed for rapid inspection of raw or calibrated visibilities, helping identify instrumental effects, RFI, and general data quality issues. At present, specfall supports visualization of target fields only, support for calibrator observation will be added in future releases.
 
 ---
-## New in v1.0.1: IN TESTING PHASE  
+## New in v1.0.1  
 - Documentation typos fixes and minor wording improvement
 - Improved output filename generation for saved plots
 - Baselines with (near-) fully flagged data are automatically skipped to avoid empty plots
@@ -52,27 +52,27 @@ pip install --upgrade git+https://github.com/prabhanjan1804/specfall.git
 **Dependencies**: numpy, matplotlib, and python-casacore
 
 ### For Windows
-SpecFall depends on python-casacore, which in turn requires the CASA Core C++ libraries. These libraries are not officially supported on Windows, so you cannot install python-casacore directly with pip on a native Windows environment.
+Specfall depends on python-casacore, which in turn requires the CASA Core C++ libraries. These libraries are not officially supported on Windows, so you cannot install python-casacore directly with pip on a native Windows environment.
 
 #### WSL 2 (Windows Subsystem for Linux) {Recommended}
 Install WSL2 for Windows
 ```bash
 sudo apt update && sudo apt install -y git python3 python3-pip
 pip install numpy matplotlib
-pip install --upgrade git+https://github.com/prabhanjan1804/SpecFall.git
+pip install --upgrade git+https://github.com/prabhanjan1804/specfall.git
 ```
 
 ## Usage
 
 Both the Python API and the CLI support interactive display (`plt.show()`)  
 or saving plots to disk using `outdir` and `outfile`.  
-If only `outdir` is specified, SpecFall will automatically generate a filename  
+If only `outdir` is specified, specfall will automatically generate a filename  
 based on the scan, baseline, and frequency/channel range.
 
 
 ### Getting Help
 
-SpecFall provides a built in help system that documents all available plotting
+specfall provides a built in help system that documents all available plotting
 options, default values, and diagnostic features.
 
 From Python:
@@ -150,14 +150,40 @@ specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap vi
 
 ---
 
+## Example
+
+Following is an example of how the plots look. The plot is for both polarization with Top-Bottom layout with frequency selection of 1355 MHz to 1375 MHz. The plot shows the RMS as well as the observation time and date by default.
+
+![Example plot](Images/example.png)  
+
+You can find the code used for plotting the image below.
+```python
+import sys
+import specfall as sf
+
+if len(sys.argv) < 2:
+    print("Usage: python sf.py your_file_name.ms ")
+    sys.exit(1)
+
+ms_path = sys.argv[1]
+
+ms = sf.open("path/to/your/ms")
+
+
+# Selected scan, frequency window, linear amplitude
+ms.select(fmin=1355.0, fmax=1375.0).plot.waterfall(baseline=(0,59),log_amp=False, outdir='/path/to/your/outdir', cmap="viridis",pol="both", layout="tb")
+```
+
+---
+
 ## Notes
-- If `CORRECTED_DATA` is absent, SpecFall automatically falls back to using `DATA`.  
+- If `CORRECTED_DATA` is absent, specfall automatically falls back to using `DATA`.  
 - Frequency tick helper: default ticks are placed every **1 MHz**, with labels every **5 MHz**.  
 - For very large datasets, consider **chunked reading** or integrating with **Dask** for scalable performance.  
 - On **Windows**, `python-casacore` is not natively supported.  
-  - Recommended: run SpecFall inside **WSL2 (Ubuntu)** for full functionality.  
+  - Recommended: run specfall inside **WSL2 (Ubuntu)** for full functionality.  
   - Advanced users may attempt a manual CASACORE + python-casacore build, but this is not officially supported.  
-- By default, SpecFall averages visibilities per baseline per timestamp; baseline averaging across the array is optional.
+- By default, specfall averages visibilities per baseline per timestamp; baseline averaging across the array is optional.
 - RMS is computed per baseline from the plotted time-frequency waterfall data and expressed in Jansky.
 - Baseline filtering is optional and disabled by default.
 - When filtering is enabled, only baselines exceeding the RMS threshold are visualized, reducing the number of output images for large datasets.
@@ -169,6 +195,6 @@ specfall plot /path/to/data.ms --scan 2 --baseline avg --log-amp False --cmap vi
   of all plotting options and their default settings.
 
 ## License
-SpecFall is distributed under GNU GENERAL PUBLIC LICENSE v3
+specfall is distributed under GNU GENERAL PUBLIC LICENSE v3
 Copyright (C) (2025) Prabhanjan H. Kulkarni
 </file>

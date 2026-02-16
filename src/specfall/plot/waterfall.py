@@ -1,4 +1,4 @@
-# SpecFall — Waterfall plotting for radio astronomy MS Datasets
+# specfall — Waterfall plotting for radio astronomy MS Datasets
 # Copyright (C) 2025  Prabhanjan H. Kulkarni <astro.ptabhanjan@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -97,13 +97,13 @@ class WaterfallPlotter:
     @staticmethod
     def help():
         """
-        Print a concise description of the SpecFall waterfall plotting options
+        Print a concise description of the specfall waterfall plotting options
         and their default values.
 
         This method is informational only and does not access MS data.
         """
         msg = """
-SpecFall Waterfall Plotter — Options Overview
+specfall Waterfall Plotter — Options Overview
 =============================================
 
 Core axes
@@ -124,7 +124,7 @@ layout        : 'tb' | 'lr'           (default: 'tb')
 
 Baselines
 -------------------
-SpecFall currently plots baseline wise by default.
+specfall currently plots baseline wise by default.
 To reduce outputs, use RMS based filtering or skip fully flagged baselines.
 
 baseline     : tuple | list | (default: all baselines)
@@ -145,7 +145,7 @@ flagged_frac_cut   : float (default: 0.999)
 Amplitude & scaling
 -------------------
 amp_unit      : str                  (default: '')
-                Display unit for amplitude. If omitted, SpecFall uses 'Jy' when plotting CORRECTED_DATA; otherwise no unit is shown.
+                Display unit for amplitude. If omitted, specfall uses 'Jy' when plotting CORRECTED_DATA; otherwise no unit is shown.
 amp_scale     : float                (default: 1.0)
                 Additional multiplicative scale factor.
 vmin, vmax    : float | None
@@ -556,7 +556,7 @@ CLI:
                     save_path = os.path.join(outdir, fname)
                     plt.savefig(save_path, dpi=200, bbox_inches="tight")
                     plt.close(fig)
-                    print(f"[SpecFall] Saved: {save_path}")
+                    print(f"[specfall] Saved: {save_path}")
                     saved.append(save_path)
                 else:
                     plt.show()
@@ -607,7 +607,7 @@ CLI:
                         save_path = os.path.join(outdir, fname)
                         plt.savefig(save_path, dpi=200, bbox_inches="tight")
                         plt.close(fig)
-                        print(f"[SpecFall] Saved: {save_path}")
+                        print(f"[specfall] Saved: {save_path}")
                         saved.append(save_path)
                     else:
                         plt.show()
@@ -695,6 +695,6 @@ def _save_or_show(fig, plt, outdir, outfile, x_axis, chan_idx, x, sel):
             outfile = f"waterfall_{scan_tag}_{rng_tag}.png"
         path = os.path.join(outdir, outfile)
         plt.savefig(path, dpi=200, bbox_inches="tight")
-        print(f"[SpecFall] Saved: {path}")
+        print(f"[specfall] Saved: {path}")
     else:
         plt.show()
